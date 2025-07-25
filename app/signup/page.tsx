@@ -26,7 +26,7 @@ export default function SignUpPage() {
 
     setTimeout(() => {
       setLoading(false)
-      router.push('/dashboard')
+      router.push('/set-up-profile')
     }, 2000)
   }
 
