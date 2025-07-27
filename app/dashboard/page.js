@@ -66,6 +66,7 @@ export default function DashboardPage() {
           <a href="/dashboard" className="text-indigo-600 font-medium hover:underline border-b-2 border-indigo-600">Dashboard</a>
           <a href="/calendar" className="text-indigo-600 font-medium hover:underline">Calendar</a>
           <a href="/assignment" className="text-indigo-600 font-medium hover:underline">Assignments</a>
+          <a href="/classes" className="text-indigo-600 font-medium hover:underline">Classes</a>
           <a href="#" className="text-red-500 font-medium hover:underline">Logout</a>
         </div>
       </nav>
