@@ -4,7 +4,7 @@ export async function POST(req) {
   const body = await req.json()
   console.log("POSTING TO SUPABASE");
   const { data, error } = await supabase
-    .from('Class')
+    .from('Classes')
     .insert([{ ...body }])
 
     if (error) {
