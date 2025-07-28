@@ -14,6 +14,7 @@ function AssignmentContent() {
   const [loading, setLoading] = useState(false)
   const [uploadLoading, setUploadLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [selectedFile, setSelectedFile] = useState(null)
   const [aiResults, setAiResults] = useState(null)
@@ -94,6 +95,12 @@ function AssignmentContent() {
 
   const loadAssignments = async () => {
     // Mock assignments - replace with actual API call
+    // const response = await fetch('/api/get-assignments')
+    const response = await fetch('/api/get-tasks')
+    const result = await response.json()
+    console.log(result.data)
+
+
     setAssignments([
       {
         id: 1,
@@ -104,6 +111,20 @@ function AssignmentContent() {
         priority: 'high'
       }
     ])
+
+
+    if (result.success) {
+      const tasks = result.data.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        due_date: task.due_date,
+        class_name: task.class_name || '', // fallback if not included
+        priority: task.priority
+      }))
+    
+      setAssignments(tasks)
+  }
   }
 
   const handleFileUpload = async () => {
@@ -158,7 +179,8 @@ function AssignmentContent() {
           estimated_time: aiAssignment.estimated_hours,
           type: aiAssignment.type || 'assignment',
           status: 'pending',
-          user_id: user?.id
+          user_id: user?.id,
+          assignment: true,
         }),
       })
 
@@ -226,16 +248,19 @@ function AssignmentContent() {
 
   const handleAddAssignment = async () => {
     if (!newAssignment.title || !newAssignment.due_date || !newAssignment.class_id) {
-      setError('Please fill in all required fields')
-      return
+      setError('Please fill in all required fields');
+      return;
     }
-
-    setLoading(true)
-    setError('')
-
+  
+    setLoading(true);
+    setError('');
+  
     try {
-      const response = await fetch('/api/add-task', {
-        method: 'POST',
+      const endpoint = isEditing ? `/api/edit-task/${id}` : '/api/add-task';
+      const method = isEditing ? 'PATCH' : 'POST';
+  
+      const response = await fetch(endpoint, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -248,12 +273,12 @@ function AssignmentContent() {
           estimated_time: newAssignment.estimated_hours,
           type: 'assignment',
           status: 'pending',
-          user_id: user?.id
+          user_id: user?.id,
         }),
-      })
-
-      const data = await response.json()
-
+      });
+  
+      const data = await response.json();
+  
       if (response.ok) {
         // Reset form and close modal
         setNewAssignment({
@@ -262,19 +287,20 @@ function AssignmentContent() {
           due_date: '',
           class_id: '',
           priority: 'medium',
-          estimated_hours: 1
-        })
-        setShowModal(false)
-        loadAssignments() // Refresh the list
+          estimated_hours: 1,
+        });
+        setShowModal(false);
+        setIsEditing(false);
+        loadAssignments(); // Refresh the list
       } else {
-        setError(data.error?.message || 'Failed to add assignment')
+        setError(data.error?.message || 'Failed to save assignment');
       }
     } catch (err) {
-      setError('Network error. Please try again.')
+      setError('Network error. Please try again.');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -359,12 +385,56 @@ function AssignmentContent() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button className="text-indigo-600 hover:text-indigo-800 px-3 py-1 rounded-lg hover:bg-indigo-50">
-                    Edit
-                  </button>
-                  <button className="text-red-600 hover:text-red-800 px-3 py-1 rounded-lg hover:bg-red-50">
-                    Delete
-                  </button>
+                <button
+                  className="text-indigo-600 hover:text-indigo-800 px-3 py-1 rounded-lg hover:bg-indigo-50"
+                  onClick={() => {
+                    setNewAssignment({
+                      title: assignment.title || '',
+                      description: assignment.description || '',
+                      due_date: assignment.due_date?.slice(0, 16) || '', // trims to "YYYY-MM-DDTHH:MM"
+                      class_id: assignment.class_id || '',
+                      priority: assignment.priority || 'medium',
+                      estimated_hours: assignment.estimated_hours || 1
+                    });
+                    setIsEditing(true)
+                    setShowModal(true)
+                  }}
+                  // onClick={async () => {
+                  //   console.log("About to edit something");
+                  //   try {
+                  //     const res = await fetch(`/api/edit-task/${id}`, {
+                  //       method: 'PATCH',
+                  //       headers: { 'Content-Type': 'application/json' },
+                  //       body: JSON.stringify(updatedFields),
+                  //     })
+                  
+                  //     if (!res.ok) throw new Error('Update failed')
+                  //     const data = await res.json()
+                  //     console.log("Updated:", data)
+                  //   } catch (err) {
+                  //     console.error(err)
+                  //   }
+                  // }}
+                >
+                  Edit
+                </button>
+                <button
+                  className="text-red-600 hover:text-red-800 px-3 py-1 rounded-lg hover:bg-red-50"
+                  onClick={async () => {
+                    console.log("About to delete something");
+                    try {
+                      const response = await fetch(`/api/delete-task/${assignment.id}`, { method: 'DELETE' })
+                      if (!response.ok) throw new Error('Delete failed')
+                  
+                      setAssignments((prev) => prev.filter((task) => task.id !== assignment.id))
+                      console.log('Deleted task:', assignment.id)
+                    } catch (err) {
+                      console.error(err)
+                    }
+                  }}
+                >
+                  Delete
+                </button>
                 </div>
               </div>
             </div>
@@ -388,7 +458,9 @@ function AssignmentContent() {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-indigo-600 mb-6">Add New Assignment</h2>
+          <h2 className="text-2xl font-bold text-indigo-600 mb-6">
+            {isEditing ? 'Edit Assignment' : 'Add New Assignment'}
+          </h2>
             
             {error && (
               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">
@@ -495,6 +567,7 @@ function AssignmentContent() {
               <button
                 onClick={() => {
                   setShowModal(false)
+                  setIsEditing(false)
                   setError('')
                   setNewAssignment({
                     title: '',
@@ -521,7 +594,7 @@ function AssignmentContent() {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                 )}
-                {loading ? 'Adding...' : 'Add Assignment'}
+                {loading ? (isEditing ? 'Saving...' : 'Adding...') : isEditing ? 'Save Changes' : 'Add Assignment'}
               </button>
             </div>
           </div>
@@ -725,3 +798,4 @@ export default function AssignmentPage() {
     </ProtectedRoute>
   )
 }
+

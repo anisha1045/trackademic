@@ -27,10 +27,11 @@ export async function GET() {
       }
     )
 
-    // Get the current user
+    // Get the current user session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     
     if (sessionError || !session) {
+      console.error("Authentication error:", sessionError)
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -46,6 +47,7 @@ export async function GET() {
       return Response.json({ error: error.message }, { status: 500 })
     }
 
+    console.log("Fetched tasks:", tasks)
     return Response.json({ 
       success: true, 
       data: tasks || []
@@ -55,4 +57,4 @@ export async function GET() {
     console.error('Server error:', error)
     return Response.json({ error: 'Internal server error' }, { status: 500 })
   }
-} 
+}

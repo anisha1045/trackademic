@@ -261,35 +261,35 @@ function DashboardContent() {
         </div>
       </nav>
 
-              <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
-          <div className="md:col-span-2 bg-white rounded-3xl shadow-xl p-6">
-            <h2 className="text-2xl font-bold text-indigo-600 mb-4">{getCurrentDate()}</h2>
-            <div className="space-y-3">
-              {scheduleItems.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No tasks scheduled for today</p>
-              ) : (
-                scheduleItems.map((item, idx) => {
-                  const isDone = completedSchedule.includes(item.text)
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-4 rounded-xl border flex justify-between items-center transition-colors duration-300 ${
-                        isDone ? 'bg-green-100 border-green-200' : 'bg-indigo-50 border-indigo-100'
-                      }`}
-                    >
-                      <span>{item.text}</span>
-                      {!isDone && (
-                        <button
-                          onClick={() => handleMarkDone(item.text)}
-                          className="bg-green-700 hover:bg-green-800 text-white text-sm px-3 py-1 rounded-lg"
-                        >
-                          ✔ Done
-                        </button>
-                      )}
-                    </div>
-                  )
-                })
-              )}
+      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+        <div className="md:col-span-2 bg-white rounded-3xl shadow-xl p-6">
+          <h2 className="text-2xl font-bold text-indigo-600 mb-4">{getCurrentDate()}</h2>
+          <div className="space-y-3">
+            {scheduleItems.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">No tasks scheduled for today</p>
+            ) : (
+              scheduleItems.map((item, idx) => {
+                const isDone = completedSchedule.includes(item.text)
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-4 rounded-xl border flex justify-between items-center transition-colors duration-300 ${
+                      isDone ? 'bg-green-100 border-green-200' : 'bg-indigo-50 border-indigo-100'
+                    }`}
+                  >
+                    <span>{item.text}</span>
+                    {!isDone && (
+                      <button
+                        onClick={() => handleMarkDone(item.text)}
+                        className="bg-green-700 hover:bg-green-800 text-white text-sm px-3 py-1 rounded-lg"
+                      >
+                        ✔ Done
+                      </button>
+                    )}
+                  </div>
+                )
+              })
+            )}
           </div>
         </div>
 
@@ -326,135 +326,135 @@ function DashboardContent() {
             </div>
           </div>
 
-                     {/* Tasks Due Today */}
-           <div className="relative bg-white rounded-3xl shadow-xl p-6 h-fit">
-             <h2 className="text-2xl font-bold text-indigo-600 mb-4">Your Tasks</h2>
-             {loadingTasks ? (
-               <div className="flex items-center justify-center py-8">
-                 <svg className="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
-                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                 </svg>
-               </div>
-             ) : (
-               <div className="space-y-4 max-h-96 overflow-y-auto">
-                 {tasks.length === 0 ? (
-                   <p className="text-gray-500 text-center py-4">No tasks yet. Click + to add your first task!</p>
-                 ) : (
-                   tasks.map((task) => (
-                     <div key={task.id} className="bg-indigo-50 rounded-xl p-4 shadow relative group">
-                       <h3 className="font-semibold text-lg text-gray-900">{task.title}</h3>
-                       {task.description && (
-                         <p className="text-sm text-gray-600 mt-1">{task.description}</p>
-                       )}
-                       <p className="text-sm text-gray-500 mt-2">
-                         Due: {task.due_date ? new Date(task.due_date).toLocaleString() : 'No due date'}
-                       </p>
-                       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                         <button
-                           onClick={() => handleEditTask(task)}
-                           className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
-                           title="Edit task"
-                         >
-                           <Edit size={16} />
-                         </button>
-                         <button
-                           onClick={() => handleDeleteTask(task.id)}
-                           className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
-                           title="Delete task"
-                         >
-                           <Trash2 size={16} />
-                         </button>
-                       </div>
-                       {task.status && (
-                         <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-2 ${
-                           task.status === 'completed' ? 'bg-green-100 text-green-800' :
-                           task.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-                           'bg-gray-100 text-gray-800'
-                         }`}>
-                           {task.status.replace('_', ' ')}
-                         </span>
-                       )}
-                     </div>
-                   ))
-                 )}
-               </div>
-             )}
+          {/* Tasks Due Today */}
+          <div className="relative bg-white rounded-3xl shadow-xl p-6 h-fit">
+            <h2 className="text-2xl font-bold text-indigo-600 mb-4">Your Tasks</h2>
+            {loadingTasks ? (
+              <div className="flex items-center justify-center py-8">
+                <svg className="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {tasks.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">No tasks yet. Click + to add your first task!</p>
+                ) : (
+                  tasks.map((task) => (
+                    <div key={task.id} className="bg-indigo-50 rounded-xl p-4 shadow relative group">
+                      <h3 className="font-semibold text-lg text-gray-900">{task.title}</h3>
+                      {task.description && (
+                        <p className="text-sm text-gray-600 mt-1">{task.description}</p>
+                      )}
+                      <p className="text-sm text-gray-500 mt-2">
+                        Due: {task.due_date ? new Date(task.due_date).toLocaleString() : 'No due date'}
+                      </p>
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                        <button
+                          onClick={() => handleEditTask(task)}
+                          className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
+                          title="Edit task"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
+                          title="Delete task"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                      {task.status && (
+                        <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-2 ${
+                          task.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          task.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {task.status.replace('_', ' ')}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
 
-             {/* Add Task Button */}
-             <button
-               onClick={() => setShowModal(true)}
-               className="absolute bottom-4 right-4 bg-indigo-600 text-white w-12 h-12 rounded-full text-2xl shadow-lg hover:bg-indigo-700"
-               title="Add new task"
-             >
-               +
-             </button>
-           </div>
-                 </div>
-       </div>
+            {/* Add Task Button */}
+            <button
+              onClick={() => setShowModal(true)}
+              className="absolute bottom-4 right-4 bg-indigo-600 text-white w-12 h-12 rounded-full text-2xl shadow-lg hover:bg-indigo-700"
+              title="Add new task"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
 
-       {/* Modal */}
-       {showModal && (
-         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-           <div className="bg-white rounded-xl p-6 w-96 shadow-xl space-y-4">
-             <h2 className="text-xl font-bold text-indigo-600">
-               {editingTask ? 'Edit Task' : 'Add New Task'}
-             </h2>
-             
-             {error && (
-               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg text-sm">
-                 {error}
-               </div>
-             )}
+      {/* Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-96 shadow-xl space-y-4">
+            <h2 className="text-xl font-bold text-indigo-600">
+              {editingTask ? 'Edit Task' : 'Add New Task'}
+            </h2>
+            
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
 
-             <input
-               type="text"
-               placeholder="Title"
-               value={newTask.title}
-               onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-               className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
-             />
-             <textarea
-               placeholder="Notes"
-               value={newTask.notes}
-               onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
-               className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
-               rows="3"
-             />
-             <input
-               type="datetime-local"
-               value={newTask.due}
-               onChange={(e) => setNewTask({ ...newTask, due: e.target.value })}
-               className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900"
-             />
-             <div className="flex justify-end gap-2">
-               <button
-                 onClick={handleCloseModal}
-                 className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
-                 disabled={loading}
-               >
-                 Cancel
-               </button>
-               <button
-                 onClick={editingTask ? handleUpdateTask : handleAddTask}
-                 disabled={loading}
-                 className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-               >
-                 {loading && (
-                   <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                   </svg>
-                 )}
-                 {loading ? (editingTask ? 'Updating...' : 'Adding...') : (editingTask ? 'Update' : 'Submit')}
-               </button>
-             </div>
-           </div>
-         </div>
-       )}
-     </div>
-   )
- }
+            <input
+              type="text"
+              placeholder="Title"
+              value={newTask.title}
+              onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
+            />
+            <textarea
+              placeholder="Notes"
+              value={newTask.notes}
+              onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
+              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
+              rows="3"
+            />
+            <input
+              type="datetime-local"
+              value={newTask.due}
+              onChange={(e) => setNewTask({ ...newTask, due: e.target.value })}
+              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={handleCloseModal}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={editingTask ? handleUpdateTask : handleAddTask}
+                disabled={loading}
+                className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {loading && (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {loading ? (editingTask ? 'Updating...' : 'Adding...') : (editingTask ? 'Update' : 'Submit')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function DashboardPage() {
   return (
