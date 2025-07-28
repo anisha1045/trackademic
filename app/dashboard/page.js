@@ -2,21 +2,69 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import { useAuth } from '@/lib/auth'
 
-export default function DashboardPage() {
+function DashboardContent() {
+  const { user, signOut } = useAuth()
   const [tasks, setTasks] = useState([
     { title: 'CS101 Reading', notes: 'Ch. 3-4', due: '2025-07-25T14:00' },
     { title: 'Math Homework', notes: 'Section 5', due: '2025-07-25T17:00' },
   ])
   const [showModal, setShowModal] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [newTask, setNewTask] = useState({ title: '', notes: '', due: '' })
   const router = useRouter()
 
-  const handleAddTask = () => {
-    if (newTask.title && newTask.due) {
-      setTasks([...tasks, newTask])
-      setNewTask({ title: '', notes: '', due: '' })
-      setShowModal(false)
+  const handleLogout = async () => {
+    const { error } = await signOut()
+    if (!error) {
+      router.push('/login')
+    }
+  }
+
+  const handleAddTask = async () => {
+    if (!newTask.title || !newTask.due) {
+      setError('Please fill in all required fields')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch('/api/add-task', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: newTask.title,
+          description: newTask.notes,
+          due_date: newTask.due,
+          type: 'task',
+          status: 'pending',
+          priority: 'medium',
+          estimated_time: 1,
+          user_id: user?.id
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setTasks([...tasks, newTask])
+        setNewTask({ title: '', notes: '', due: '' })
+        setShowModal(false)
+        setError('')
+      } else {
+        setError(data.error?.message || 'Failed to add task')
+      }
+    } catch (err) {
+      setError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -26,9 +74,11 @@ export default function DashboardPage() {
       <nav className="flex justify-between items-center bg-white shadow px-6 py-4 sticky top-0 z-10">
         <h1 className="text-xl font-bold text-indigo-600">Trackademic</h1>
         <div className="flex gap-6">
-          <a href="#" className="text-indigo-600 font-medium hover:underline">Calendar</a>
-          <a href="#" className="text-indigo-600 font-medium hover:underline">Assignments</a>
-          <a href="#" className="text-red-500 font-medium hover:underline">Logout</a>
+          <a href="/dashboard" className="text-indigo-600 font-medium hover:underline border-b-2 border-indigo-600">Dashboard</a>
+          <a href="/calendar" className="text-indigo-600 font-medium hover:underline">Calendar</a>
+          <a href="/assignment" className="text-indigo-600 font-medium hover:underline">Assignments</a>
+          <a href="/classes" className="text-indigo-600 font-medium hover:underline">Classes</a>
+          <button onClick={handleLogout} className="text-red-500 font-medium hover:underline">Logout</button>
         </div>
       </nav>
 
@@ -100,42 +150,69 @@ export default function DashboardPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-96 shadow-xl space-y-4">
             <h2 className="text-xl font-bold text-indigo-600">Add New Task</h2>
+            
+            {error && (
+              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+
             <input
               type="text"
               placeholder="Title"
               value={newTask.title}
               onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-              className="w-full p-2 border rounded-lg"
+              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
             />
             <textarea
               placeholder="Notes"
               value={newTask.notes}
               onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
-              className="w-full p-2 border rounded-lg"
+              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
             />
             <input
               type="datetime-local"
               value={newTask.due}
               onChange={(e) => setNewTask({ ...newTask, due: e.target.value })}
-              className="w-full p-2 border rounded-lg"
+              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900"
             />
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false)
+                  setError('')
+                  setNewTask({ title: '', notes: '', due: '' })
+                }}
                 className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
+                disabled={loading}
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddTask}
-                className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                disabled={loading}
+                className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
               >
-                Submit
+                {loading && (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {loading ? 'Adding...' : 'Submit'}
               </button>
             </div>
           </div>
         </div>
       )}
     </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <ProtectedRoute>
+      <DashboardContent />
+    </ProtectedRoute>
   )
 }

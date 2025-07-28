@@ -1,16 +1,24 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
-import { supabase } from '@/lib/supabaseClient'
+import { useAuth } from '@/lib/auth'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { signIn, user } = useAuth()
   const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      router.push('/dashboard')
+    }
+  }, [user, router])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -22,10 +30,7 @@ export default function LoginPage() {
     setError('')
     setSuccess(false)
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: form.email,
-      password: form.password,
-    })
+    const { error } = await signIn(form.email, form.password)
 
     if (error) {
       setError(error.message)
