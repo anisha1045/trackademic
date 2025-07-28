@@ -178,6 +178,7 @@ function CalendarContent() {
           </div>
 
           {/* Days of week header */}
+          {view !== 'day' && (
           <div className="grid grid-cols-7 gap-1 mb-2">
             {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
               <div key={day} className="p-2 text-center font-semibold text-gray-700 bg-gray-50 rounded-lg">
@@ -185,42 +186,109 @@ function CalendarContent() {
               </div>
             ))}
           </div>
+)}
+          {/* Calendar View */}
+{view === 'month' && (
+  <div className="grid grid-cols-7 gap-1">
+    {getCalendarDays().map((day, index) => (
+      <div
+        key={index}
+        className={`min-h-[120px] p-2 border border-gray-100 rounded-lg ${
+          day ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
+        } ${isToday(day) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''}`}
+      >
+        {day && (
+          <>
+            <div className={`text-sm font-medium mb-1 ${
+              isToday(day) ? 'text-indigo-600' : 'text-gray-900'
+            }`}>
+              {day}
+            </div>
+            <div className="space-y-1">
+              {getEventsForDay(day).map((event) => (
+                <div
+                  key={event.id}
+                  className={`${event.color} text-white text-xs p-1 rounded truncate`}
+                  title={`${event.title} at ${event.time}`}
+                >
+                  <div className="font-medium">{event.time}</div>
+                  <div>{event.title}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    ))}
+  </div>
+)}
 
-          {/* Calendar Days */}
-          <div className="grid grid-cols-7 gap-1">
-            {getCalendarDays().map((day, index) => (
+{view === 'week' && (
+  <div className="grid grid-cols-7 gap-1">
+    {[...Array(7)].map((_, i) => {
+      const date = new Date(currentDate)
+      const startOfWeek = date.getDate() - date.getDay()
+      const dayDate = new Date(date.setDate(startOfWeek + i))
+      const day = dayDate.getDate()
+      const isTodayDay = isToday(day)
+
+      return (
+        <div
+          key={i}
+          className={`min-h-[120px] p-2 border border-gray-100 rounded-lg bg-white hover:bg-gray-50 ${
+            isTodayDay ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+          }`}
+        >
+          <div className={`text-sm font-medium mb-1 ${
+            isTodayDay ? 'text-indigo-600' : 'text-gray-900'
+          }`}>
+            {day}
+          </div>
+          <div className="space-y-1">
+            {getEventsForDay(day).map(event => (
               <div
-                key={index}
-                className={`min-h-[120px] p-2 border border-gray-100 rounded-lg ${
-                  day ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
-                } ${isToday(day) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''}`}
+                key={event.id}
+                className={`${event.color} text-white text-xs p-1 rounded truncate`}
               >
-                {day && (
-                  <>
-                    <div className={`text-sm font-medium mb-1 ${
-                      isToday(day) ? 'text-indigo-600' : 'text-gray-900'
-                    }`}>
-                      {day}
-                    </div>
-                    
-                    {/* Events for this day */}
-                    <div className="space-y-1">
-                      {getEventsForDay(day).map((event) => (
-                        <div
-                          key={event.id}
-                          className={`${event.color} text-white text-xs p-1 rounded truncate`}
-                          title={`${event.title} at ${event.time}`}
-                        >
-                          <div className="font-medium">{event.time}</div>
-                          <div>{event.title}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
+                <div className="font-medium">{event.time}</div>
+                <div>{event.title}</div>
               </div>
             ))}
           </div>
+        </div>
+      )
+    })}
+  </div>
+)}
+
+{view === 'day' && (
+  <div className="w-full">
+    <div
+      className={`w-full min-h-[300px] p-4 border border-gray-100 rounded-lg bg-white hover:bg-gray-50 ${
+        isToday(currentDate.getDate()) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+      }`}
+    >
+      <div className="text-lg font-bold text-indigo-600 mb-2">
+        {formatDate(currentDate)}
+      </div>
+      {getEventsForDay(currentDate.getDate()).length === 0 ? (
+        <p className="text-gray-500 text-sm">No events for this day.</p>
+      ) : (
+        <div className="space-y-2">
+          {getEventsForDay(currentDate.getDate()).map(event => (
+            <div
+              key={event.id}
+              className={`${event.color} text-white text-xs p-2 rounded`}
+            >
+              <div className="font-medium">{event.time}</div>
+              <div>{event.title}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+)}
         </div>
 
         {/* Upcoming Events Sidebar */}

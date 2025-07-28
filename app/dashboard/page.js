@@ -1,4 +1,5 @@
 'use client'
+import { useEffect } from 'react'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -8,6 +9,9 @@ import { useAuth } from '@/lib/auth'
 function DashboardContent() {
   const { user, signOut } = useAuth()
   const router = useRouter()
+  const [tasksDueToday, setTasksDueToday] = useState([]);
+  // REMOVE THIS LATER
+  const [completedTasks, setCompletedTasks] = useState([]);
 
   const scheduleItems = [
     '8:00 AM – Review flashcards',
@@ -33,8 +37,12 @@ function DashboardContent() {
     }
   }
 
-  const handleMarkDone = (item) => {
-    setCompletedSchedule((prev) => [...prev, item])
+  const handleTaskDone = (task) => {
+    setCompletedTasks((prev) =>
+      prev.includes(task.id)
+        ? prev.filter((id) => id !== task.id) // unmark
+        : [...prev, task.id] // mark as done
+    )
   }
 
   const formatTime = (isoString) => {
@@ -45,10 +53,42 @@ function DashboardContent() {
     })
   }
 
-  const dailyProgress = Math.round((completedSchedule.length / scheduleItems.length) * 100)
+  const totalItems = tasksDueToday.length
+const totalCompleted = completedTasks.length
+const dailyProgress = totalItems === 0 ? 0 : Math.round((totalCompleted / totalItems) * 100)
   const radius = 45
   const circumference = 2 * Math.PI * radius
   const offset = circumference * (1 - dailyProgress / 100)
+
+  const loadAssignments = async () => {
+    const response = await fetch('/api/get-tasks');
+    const result = await response.json();
+  
+    if (!result.success) return;
+  
+    const allTasks = result.data.map(task => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      due_date: task.due_date,
+      class_name: task.class_name || '',
+      priority: task.priority
+    }));
+    
+    console.log("ALL TASKS:", allTasks);
+  
+    // Filter tasks due today
+    const today = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+    const dueToday = allTasks.filter(task => 
+      task.due_date?.startsWith(today)
+    );
+  
+    setTasksDueToday(dueToday);
+  };
+
+  useEffect(() => {
+    loadAssignments()
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-tr from-indigo-500 to-blue-400 text-gray-800">
@@ -65,7 +105,13 @@ function DashboardContent() {
 
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
         <div className="md:col-span-2 bg-white rounded-3xl shadow-xl p-6">
-          <h2 className="text-2xl font-bold text-indigo-600 mb-4">Friday, July 25</h2>
+        <h2 className="text-2xl font-bold text-indigo-600 mb-4">
+          {new Date().toLocaleDateString(undefined, {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric'
+          })}
+        </h2>
           <div className="grid grid-rows-8 gap-3">
             {scheduleItems.map((item, idx) => {
               const isDone = completedSchedule.includes(item)
@@ -77,14 +123,6 @@ function DashboardContent() {
                   }`}
                 >
                   <span>{item}</span>
-                  {!isDone && (
-                    <button
-                      onClick={() => handleMarkDone(item)}
-                      className="bg-green-700 hover:bg-green-800 text-white text-sm px-3 py-1 rounded-lg"
-                    >
-                      ✔ Done
-                    </button>
-                  )}
                 </div>
               )
             })}
@@ -124,22 +162,38 @@ function DashboardContent() {
             </div>
           </div>
 
-          {/* Tasks Due Today */}
-          <div className="bg-white rounded-3xl shadow-xl p-6 h-fit">
-            <h2 className="text-2xl font-bold text-indigo-600 mb-4">Tasks Due Today</h2>
-            <div className="space-y-4">
-              {tasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="rounded-lg p-4 mb-3 transition-colors duration-300 bg-indigo-50"
-                >
-                  <h4 className="font-semibold text-gray-800">{task.title}</h4>
-                  <p className="text-sm text-gray-600">{task.notes}</p>
-                  <p className="text-xs text-gray-500">Due: {formatTime(task.due)}</p>
-                </div>
-              ))}
+{/* Tasks Due Today */}
+<div className="bg-white rounded-3xl shadow-xl p-6 h-fit">
+  <h2 className="text-2xl font-bold text-indigo-600 mb-4">Tasks Due Today</h2>
+  <div className="space-y-4">
+    {tasksDueToday.length === 0 ? (
+      <p className="text-gray-500">No tasks due today.</p>
+    ) : (tasksDueToday.map((task) => {
+      const isDone = completedTasks.includes(task.id)
+      return (
+        <div key={task.id} className={`rounded-lg p-4 mb-3 transition-colors duration-300 ${isDone ? 'bg-green-100' : 'bg-indigo-50'}`}>
+          <div className="flex justify-between items-center">
+            <div>
+              <h4 className="font-semibold text-gray-800">{task.title}</h4>
+              <p className="text-sm text-gray-600">{task.description}</p>
+              <p className="text-xs text-gray-500">Due: {formatTime(task.due_date)}</p>
             </div>
+            <button
+  onClick={() => handleTaskDone(task)}
+  className={`text-sm px-3 py-1 rounded-lg ${
+    isDone
+      ? 'bg-gray-300 hover:bg-gray-400 text-gray-800'
+      : 'bg-green-700 hover:bg-green-800 text-white'
+  }`}
+>
+  {isDone ? 'Undo' : 'Done'}
+</button>
           </div>
+        </div>
+      )
+    }))}
+  </div>
+</div>
         </div>
       </div>
     </div>
