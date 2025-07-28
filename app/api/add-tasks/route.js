@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { GmailNotificationService } from '../../../lib/gmailService'
 
 export async function POST(req) {
   try {
@@ -47,6 +48,22 @@ export async function POST(req) {
     if (error) {
       console.error("Supabase insert error:", error)
       return Response.json({ error }, { status: 500 })
+    }
+    
+    // Send Gmail notification if task was created successfully
+    try {
+      const gmailService = new GmailNotificationService();
+      const taskForEmail = {
+        ...body,
+        id: data?.[0]?.id || 'new',
+        class_name: 'Assignment'
+      };
+      
+      console.log('Sending Gmail notification for new task:', taskForEmail.title);
+      await gmailService.sendScheduleNotification('stclairevin@gmail.com', [taskForEmail]);
+      console.log('Gmail notification sent successfully');
+    } catch (gmailError) {
+      console.error('Failed to send Gmail notification:', gmailError);
     }
     
     return Response.json({ success: true, data })

@@ -1,4 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { gmailService } from '@/lib/gmailService'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY)
 
@@ -234,6 +237,44 @@ export async function POST(req) {
       }, { status: 400 })
     }
 
+    // Send Gmail notification if assignments were parsed successfully
+    try {
+      const cookieStore = await cookies()
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
+          cookies: {
+            getAll() {
+              return cookieStore.getAll()
+            },
+            setAll(cookiesToSet) {
+              cookiesToSet.forEach(({ name, value, options }) => {
+                cookieStore.set(name, value, options)
+              })
+            },
+          },
+        }
+      )
+      
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (session && session.user.email) {
+        const notificationResult = await gmailService.sendScheduleNotification(
+          session.user.email,
+          parsedData.assignments
+        )
+        
+        if (notificationResult.success) {
+          console.log('Gmail notification sent successfully for syllabus parsing:', notificationResult.messageId)
+        } else {
+          console.warn('Failed to send Gmail notification for syllabus parsing:', notificationResult.error)
+        }
+      }
+    } catch (emailError) {
+      console.warn('Error sending email notification for syllabus parsing (non-blocking):', emailError)
+    }
+
     // Add metadata about the parsing
     return Response.json({
       success: true,
@@ -250,4 +291,4 @@ export async function POST(req) {
       details: error.message 
     }, { status: 500 })
   }
-} 
+}
