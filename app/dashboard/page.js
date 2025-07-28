@@ -1,17 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
+import { Edit, Trash2 } from 'lucide-react'
 
 function DashboardContent() {
   const { user, signOut } = useAuth()
   const router = useRouter()
 
-  const scheduleItems = [
+  // Fallback schedule items if no tasks for today
+  const defaultScheduleItems = [
     '8:00 AM – Review flashcards',
-    '9:00 AM – Algorithms Lecture',
+    '9:00 AM – Algorithms Lecture', 
     '10:00 AM – Study Session',
     '12:00 PM – Lunch',
     '1:00 PM – Group Project Work',
@@ -21,10 +23,38 @@ function DashboardContent() {
   ]
 
   const [completedSchedule, setCompletedSchedule] = useState([])
-  const [tasks, setTasks] = useState([
-    { id: 1, title: 'CS101 Reading', notes: 'Ch. 3-4', due: '2025-07-25T14:00', completed: false },
-    { id: 2, title: 'Math Homework', notes: 'Section 5', due: '2025-07-25T17:00', completed: false },
-  ])
+  const [tasks, setTasks] = useState([])
+  const [showModal, setShowModal] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [loadingTasks, setLoadingTasks] = useState(true)
+  const [error, setError] = useState('')
+  const [editingTask, setEditingTask] = useState(null)
+  const [newTask, setNewTask] = useState({ title: '', notes: '', due: '' })
+
+  // Load tasks from database
+  useEffect(() => {
+    if (user) {
+      loadTasks()
+    }
+  }, [user])
+
+  const loadTasks = async () => {
+    try {
+      setLoadingTasks(true)
+      const response = await fetch('/api/get-tasks')
+      const data = await response.json()
+      
+      if (response.ok) {
+        setTasks(data.data || [])
+      } else {
+        console.error('Failed to load tasks:', data.error)
+      }
+    } catch (err) {
+      console.error('Error loading tasks:', err)
+    } finally {
+      setLoadingTasks(false)
+    }
+  }
 
   const handleLogout = async () => {
     const { error } = await signOut()
@@ -45,10 +75,178 @@ function DashboardContent() {
     })
   }
 
+  const getCurrentDate = () => {
+    const now = new Date()
+    return now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })
+  }
+
+  // Get tasks for today's schedule using useMemo
+  const tasksForToday = useMemo(() => {
+    const today = new Date()
+    const todayStr = today.toDateString()
+    
+    return tasks.filter(task => {
+      if (!task.due_date) return false
+      const taskDate = new Date(task.due_date)
+      return taskDate.toDateString() === todayStr
+    })
+  }, [tasks])
+
+  // Use today's tasks or default schedule
+  const scheduleItems = useMemo(() => {
+    return tasksForToday.length > 0 
+      ? tasksForToday.map(task => ({
+          id: task.id,
+          text: `${new Date(task.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${task.title}`,
+          isTask: true
+        }))
+      : defaultScheduleItems.map((item, idx) => ({
+          id: `default-${idx}`,
+          text: item,
+          isTask: false
+        }))
+  }, [tasksForToday, defaultScheduleItems])
+
   const dailyProgress = Math.round((completedSchedule.length / scheduleItems.length) * 100)
   const radius = 45
   const circumference = 2 * Math.PI * radius
   const offset = circumference * (1 - dailyProgress / 100)
+
+  const handleAddTask = async () => {
+    if (!newTask.title || !newTask.due) {
+      setError('Please fill in all required fields')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch('/api/add-task', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: newTask.title,
+          description: newTask.notes,
+          due_date: newTask.due,
+          type: 'task',
+          status: 'pending',
+          priority: 'medium',
+          estimated_time: 1,
+          user_id: user?.id
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        await loadTasks() // Reload tasks from database
+        setNewTask({ title: '', notes: '', due: '' })
+        setShowModal(false)
+        setError('')
+      } else {
+        setError(data.error?.message || 'Failed to add task')
+      }
+    } catch (err) {
+      setError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleUpdateTask = async () => {
+    if (!newTask.title || !newTask.due) {
+      setError('Please fill in all required fields')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch('/api/update-task', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: editingTask.id,
+          title: newTask.title,
+          description: newTask.notes,
+          due_date: newTask.due,
+          user_id: user?.id
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        await loadTasks() // Reload tasks from database
+        setNewTask({ title: '', notes: '', due: '' })
+        setEditingTask(null)
+        setShowModal(false)
+        setError('')
+      } else {
+        setError(data.error?.message || 'Failed to update task')
+      }
+    } catch (err) {
+      setError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteTask = async (taskId) => {
+    if (!confirm('Are you sure you want to delete this task?')) {
+      return
+    }
+
+    try {
+      const response = await fetch('/api/delete-task', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: taskId,
+          user_id: user?.id
+        }),
+      })
+
+      if (response.ok) {
+        await loadTasks() // Reload tasks from database
+      } else {
+        const data = await response.json()
+        setError(data.error?.message || 'Failed to delete task')
+      }
+    } catch (err) {
+      setError('Network error. Please try again.')
+    }
+  }
+
+  const handleEditTask = (task) => {
+    setEditingTask(task)
+    setNewTask({
+      title: task.title,
+      notes: task.description || '',
+      due: task.due_date ? new Date(task.due_date).toISOString().slice(0, 16) : ''
+    })
+    setShowModal(true)
+  }
+
+  const handleCloseModal = () => {
+    setShowModal(false)
+    setEditingTask(null)
+    setError('')
+    setNewTask({ title: '', notes: '', due: '' })
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-tr from-indigo-500 to-blue-400 text-gray-800">
@@ -63,31 +261,35 @@ function DashboardContent() {
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
-        <div className="md:col-span-2 bg-white rounded-3xl shadow-xl p-6">
-          <h2 className="text-2xl font-bold text-indigo-600 mb-4">Friday, July 25</h2>
-          <div className="grid grid-rows-8 gap-3">
-            {scheduleItems.map((item, idx) => {
-              const isDone = completedSchedule.includes(item)
-              return (
-                <div
-                  key={idx}
-                  className={`p-4 rounded-xl border flex justify-between items-center transition-colors duration-300 ${
-                    isDone ? 'bg-green-100 border-green-200' : 'bg-indigo-50 border-indigo-100'
-                  }`}
-                >
-                  <span>{item}</span>
-                  {!isDone && (
-                    <button
-                      onClick={() => handleMarkDone(item)}
-                      className="bg-green-700 hover:bg-green-800 text-white text-sm px-3 py-1 rounded-lg"
+              <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+          <div className="md:col-span-2 bg-white rounded-3xl shadow-xl p-6">
+            <h2 className="text-2xl font-bold text-indigo-600 mb-4">{getCurrentDate()}</h2>
+            <div className="space-y-3">
+              {scheduleItems.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No tasks scheduled for today</p>
+              ) : (
+                scheduleItems.map((item, idx) => {
+                  const isDone = completedSchedule.includes(item.text)
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-4 rounded-xl border flex justify-between items-center transition-colors duration-300 ${
+                        isDone ? 'bg-green-100 border-green-200' : 'bg-indigo-50 border-indigo-100'
+                      }`}
                     >
-                      ✔ Done
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+                      <span>{item.text}</span>
+                      {!isDone && (
+                        <button
+                          onClick={() => handleMarkDone(item.text)}
+                          className="bg-green-700 hover:bg-green-800 text-white text-sm px-3 py-1 rounded-lg"
+                        >
+                          ✔ Done
+                        </button>
+                      )}
+                    </div>
+                  )
+                })
+              )}
           </div>
         </div>
 
@@ -124,27 +326,135 @@ function DashboardContent() {
             </div>
           </div>
 
-          {/* Tasks Due Today */}
-          <div className="bg-white rounded-3xl shadow-xl p-6 h-fit">
-            <h2 className="text-2xl font-bold text-indigo-600 mb-4">Tasks Due Today</h2>
-            <div className="space-y-4">
-              {tasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="rounded-lg p-4 mb-3 transition-colors duration-300 bg-indigo-50"
-                >
-                  <h4 className="font-semibold text-gray-800">{task.title}</h4>
-                  <p className="text-sm text-gray-600">{task.notes}</p>
-                  <p className="text-xs text-gray-500">Due: {formatTime(task.due)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
+                     {/* Tasks Due Today */}
+           <div className="relative bg-white rounded-3xl shadow-xl p-6 h-fit">
+             <h2 className="text-2xl font-bold text-indigo-600 mb-4">Your Tasks</h2>
+             {loadingTasks ? (
+               <div className="flex items-center justify-center py-8">
+                 <svg className="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
+                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                 </svg>
+               </div>
+             ) : (
+               <div className="space-y-4 max-h-96 overflow-y-auto">
+                 {tasks.length === 0 ? (
+                   <p className="text-gray-500 text-center py-4">No tasks yet. Click + to add your first task!</p>
+                 ) : (
+                   tasks.map((task) => (
+                     <div key={task.id} className="bg-indigo-50 rounded-xl p-4 shadow relative group">
+                       <h3 className="font-semibold text-lg text-gray-900">{task.title}</h3>
+                       {task.description && (
+                         <p className="text-sm text-gray-600 mt-1">{task.description}</p>
+                       )}
+                       <p className="text-sm text-gray-500 mt-2">
+                         Due: {task.due_date ? new Date(task.due_date).toLocaleString() : 'No due date'}
+                       </p>
+                       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                         <button
+                           onClick={() => handleEditTask(task)}
+                           className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
+                           title="Edit task"
+                         >
+                           <Edit size={16} />
+                         </button>
+                         <button
+                           onClick={() => handleDeleteTask(task.id)}
+                           className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
+                           title="Delete task"
+                         >
+                           <Trash2 size={16} />
+                         </button>
+                       </div>
+                       {task.status && (
+                         <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-2 ${
+                           task.status === 'completed' ? 'bg-green-100 text-green-800' :
+                           task.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                           'bg-gray-100 text-gray-800'
+                         }`}>
+                           {task.status.replace('_', ' ')}
+                         </span>
+                       )}
+                     </div>
+                   ))
+                 )}
+               </div>
+             )}
+
+             {/* Add Task Button */}
+             <button
+               onClick={() => setShowModal(true)}
+               className="absolute bottom-4 right-4 bg-indigo-600 text-white w-12 h-12 rounded-full text-2xl shadow-lg hover:bg-indigo-700"
+               title="Add new task"
+             >
+               +
+             </button>
+           </div>
+                 </div>
+       </div>
+
+       {/* Modal */}
+       {showModal && (
+         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+           <div className="bg-white rounded-xl p-6 w-96 shadow-xl space-y-4">
+             <h2 className="text-xl font-bold text-indigo-600">
+               {editingTask ? 'Edit Task' : 'Add New Task'}
+             </h2>
+             
+             {error && (
+               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg text-sm">
+                 {error}
+               </div>
+             )}
+
+             <input
+               type="text"
+               placeholder="Title"
+               value={newTask.title}
+               onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+               className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
+             />
+             <textarea
+               placeholder="Notes"
+               value={newTask.notes}
+               onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
+               className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
+               rows="3"
+             />
+             <input
+               type="datetime-local"
+               value={newTask.due}
+               onChange={(e) => setNewTask({ ...newTask, due: e.target.value })}
+               className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900"
+             />
+             <div className="flex justify-end gap-2">
+               <button
+                 onClick={handleCloseModal}
+                 className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
+                 disabled={loading}
+               >
+                 Cancel
+               </button>
+               <button
+                 onClick={editingTask ? handleUpdateTask : handleAddTask}
+                 disabled={loading}
+                 className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
+               >
+                 {loading && (
+                   <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                   </svg>
+                 )}
+                 {loading ? (editingTask ? 'Updating...' : 'Adding...') : (editingTask ? 'Update' : 'Submit')}
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
+     </div>
+   )
+ }
 
 export default function DashboardPage() {
   return (
