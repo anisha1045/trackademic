@@ -5,6 +5,27 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 
+const [loading, setLoading] = useState(false)
+const [message, setMessage] = useState(null)
+
+const handleSync = async () => {
+  setLoading(true)
+  setMessage(null)
+  try {
+    const res = await fetch('/api/sync-to-calendar?user_id=' + user.id, {
+      method: 'POST'
+    })
+    const data = await res.json()
+    setMessage(data.message || 'Synced!')
+  } catch (err) {
+    console.error('Sync error:', err)
+    setMessage('Failed to sync tasks.')
+  } finally {
+    setLoading(false)
+  }
+}
+
+
 function CalendarContent() {
   const { user, signOut } = useAuth()
   const router = useRouter()
@@ -242,12 +263,31 @@ function CalendarContent() {
                   {event.type}
                 </span>
               </div>
+
             ))}
+            {/* Sync Button */}
+<div className="mt-6 bg-white rounded-3xl shadow-xl p-6">
+  <h3 className="text-xl font-bold text-indigo-600 mb-4">Google Calendar Sync</h3>
+  <button
+    onClick={handleSync}
+    disabled={loading}
+    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+  >
+    {loading ? 'Syncing...' : 'Sync Tasks to Google Calendar'}
+  </button>
+  {message && (
+    <p className="mt-2 text-sm text-gray-700">
+      {message}
+    </p>
+  )}
+</div>
+
           </div>
         </div>
       </div>
     </div>
   )
+  
 }
 
 export default function CalendarPage() {
