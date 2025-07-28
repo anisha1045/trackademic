@@ -29,11 +29,11 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     setSuccess(false)
-
-    const { error } = await signIn(form.email, form.password)
-
-    if (error) {
-      setError(error.message)
+  
+    const result = await signIn(form.email, form.password)
+  
+    if (result.error) {
+      setError(result.error.message)
       setLoading(false)
     } else {
       setSuccess(true)
@@ -43,6 +43,7 @@ export default function LoginPage() {
       }, 2000)
     }
   }
+  
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-tr from-indigo-500 to-blue-400 p-4">
