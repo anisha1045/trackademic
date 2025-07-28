@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-export async function GET() {
+export async function PUT(request) {
   try {
     const cookieStore = await cookies()
     const supabase = createServerClient(
@@ -27,34 +27,54 @@ export async function GET() {
       }
     )
 
-    // Get the current user session
+    // Get the current user
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     
     if (sessionError || !session) {
-      console.error("Authentication error:", sessionError)
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get tasks for the current user
-    const { data: tasks, error } = await supabase
+    const body = await request.json()
+    const { id, title, description, due_date } = body
+
+    // Validate required fields
+    if (!id || !title) {
+      return Response.json({ 
+        error: 'Task ID and title are required' 
+      }, { status: 400 })
+    }
+
+    // Update the task (only if it belongs to the current user)
+    const { data, error } = await supabase
       .from('Tasks')
-      .select('*')
+      .update({
+        title,
+        description,
+        due_date,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
       .eq('user_id', session.user.id)
-      .order('due_date', { ascending: true })
+      .select()
 
     if (error) {
       console.error('Database error:', error)
       return Response.json({ error: error.message }, { status: 500 })
     }
 
-    console.log("Fetched tasks:", tasks)
+    if (!data || data.length === 0) {
+      return Response.json({ 
+        error: 'Task not found or access denied' 
+      }, { status: 404 })
+    }
+
     return Response.json({ 
       success: true, 
-      data: tasks || []
+      data: data[0]
     })
 
   } catch (error) {
     console.error('Server error:', error)
     return Response.json({ error: 'Internal server error' }, { status: 500 })
   }
-}
+} 
