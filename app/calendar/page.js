@@ -1,8 +1,20 @@
 'use client'
 
 import { useState } from 'react'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import { useAuth } from '@/lib/auth'
+import { useRouter } from 'next/navigation'
 
-export default function CalendarPage() {
+function CalendarContent() {
+  const { user, signOut } = useAuth()
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    const { error } = await signOut()
+    if (!error) {
+      router.push('/login')
+    }
+  }
   const [currentDate, setCurrentDate] = useState(new Date())
   const [view, setView] = useState('month') // day, week, month
   
@@ -92,7 +104,7 @@ export default function CalendarPage() {
           <a href="/calendar" className="text-indigo-600 font-medium hover:underline border-b-2 border-indigo-600">Calendar</a>
           <a href="/assignment" className="text-indigo-600 font-medium hover:underline">Assignments</a>
           <a href="/classes" className="text-indigo-600 font-medium hover:underline">Classes</a>
-          <a href="#" className="text-red-500 font-medium hover:underline">Logout</a>
+          <button onClick={handleLogout} className="text-red-500 font-medium hover:underline">Logout</button>
         </div>
       </nav>
 
@@ -235,5 +247,13 @@ export default function CalendarPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function CalendarPage() {
+  return (
+    <ProtectedRoute>
+      <CalendarContent />
+    </ProtectedRoute>
   )
 }

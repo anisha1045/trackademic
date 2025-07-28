@@ -2,8 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import { useAuth } from '@/lib/auth'
 
-export default function DashboardPage() {
+function DashboardContent() {
+  const { user, signOut } = useAuth()
   const [tasks, setTasks] = useState([
     { title: 'CS101 Reading', notes: 'Ch. 3-4', due: '2025-07-25T14:00' },
     { title: 'Math Homework', notes: 'Section 5', due: '2025-07-25T17:00' },
@@ -13,6 +16,13 @@ export default function DashboardPage() {
   const [error, setError] = useState('')
   const [newTask, setNewTask] = useState({ title: '', notes: '', due: '' })
   const router = useRouter()
+
+  const handleLogout = async () => {
+    const { error } = await signOut()
+    if (!error) {
+      router.push('/login')
+    }
+  }
 
   const handleAddTask = async () => {
     if (!newTask.title || !newTask.due) {
@@ -36,7 +46,8 @@ export default function DashboardPage() {
           type: 'task',
           status: 'pending',
           priority: 'medium',
-          estimated_time: 1
+          estimated_time: 1,
+          user_id: user?.id
         }),
       })
 
@@ -67,7 +78,7 @@ export default function DashboardPage() {
           <a href="/calendar" className="text-indigo-600 font-medium hover:underline">Calendar</a>
           <a href="/assignment" className="text-indigo-600 font-medium hover:underline">Assignments</a>
           <a href="/classes" className="text-indigo-600 font-medium hover:underline">Classes</a>
-          <a href="#" className="text-red-500 font-medium hover:underline">Logout</a>
+          <button onClick={handleLogout} className="text-red-500 font-medium hover:underline">Logout</button>
         </div>
       </nav>
 
@@ -151,19 +162,19 @@ export default function DashboardPage() {
               placeholder="Title"
               value={newTask.title}
               onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
             />
             <textarea
               placeholder="Notes"
               value={newTask.notes}
               onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
-              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
             />
             <input
               type="datetime-local"
               value={newTask.due}
               onChange={(e) => setNewTask({ ...newTask, due: e.target.value })}
-              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
+              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900"
             />
             <div className="flex justify-end gap-2">
               <button
@@ -195,5 +206,13 @@ export default function DashboardPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <ProtectedRoute>
+      <DashboardContent />
+    </ProtectedRoute>
   )
 }

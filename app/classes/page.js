@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import { useAuth } from '@/lib/auth'
 
-export default function ClassesPage() {
+function ClassesContent() {
+  const { user, signOut } = useAuth()
   const [classes, setClasses] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -18,6 +21,13 @@ export default function ClassesPage() {
     color: '#6366f1'
   })
   const router = useRouter()
+
+  const handleLogout = async () => {
+    const { error } = await signOut()
+    if (!error) {
+      router.push('/login')
+    }
+  }
 
   useEffect(() => {
     loadClasses()
@@ -44,6 +54,13 @@ export default function ClassesPage() {
       return
     }
 
+    // Ensure user is authenticated
+    if (!user?.id) {
+      setError('User not authenticated')
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     setError('')
 
@@ -56,10 +73,10 @@ export default function ClassesPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...newClass,
-          user_id: 1 // TODO: Get from auth context
-        }),
+                 body: JSON.stringify({
+           ...newClass,
+           user_id: user?.id
+         }),
       })
 
       const data = await response.json()
@@ -139,7 +156,7 @@ export default function ClassesPage() {
           <a href="/calendar" className="text-indigo-600 font-medium hover:underline">Calendar</a>
           <a href="/assignment" className="text-indigo-600 font-medium hover:underline">Assignments</a>
           <a href="/classes" className="text-indigo-600 font-medium hover:underline border-b-2 border-indigo-600">Classes</a>
-          <a href="#" className="text-red-500 font-medium hover:underline">Logout</a>
+          <button onClick={handleLogout} className="text-red-500 font-medium hover:underline">Logout</button>
         </div>
       </nav>
 
@@ -252,7 +269,7 @@ export default function ClassesPage() {
                   placeholder="e.g., Introduction to Computer Science"
                   value={newClass.name}
                   onChange={(e) => setNewClass({ ...newClass, name: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 placeholder-gray-500"
                 />
               </div>
 
@@ -266,7 +283,7 @@ export default function ClassesPage() {
                   placeholder="e.g., CS101"
                   value={newClass.code}
                   onChange={(e) => setNewClass({ ...newClass, code: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 placeholder-gray-500"
                 />
               </div>
 
@@ -280,7 +297,7 @@ export default function ClassesPage() {
                   placeholder="e.g., Dr. Jane Smith"
                   value={newClass.instructor}
                   onChange={(e) => setNewClass({ ...newClass, instructor: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 placeholder-gray-500"
                 />
               </div>
 
@@ -294,7 +311,7 @@ export default function ClassesPage() {
                   placeholder="e.g., Spring 2025"
                   value={newClass.semester}
                   onChange={(e) => setNewClass({ ...newClass, semester: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 placeholder-gray-500"
                 />
               </div>
 
@@ -327,7 +344,7 @@ export default function ClassesPage() {
                   value={newClass.description}
                   onChange={(e) => setNewClass({ ...newClass, description: e.target.value })}
                   rows="3"
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 placeholder-gray-500"
                 />
               </div>
             </div>
@@ -362,5 +379,13 @@ export default function ClassesPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function ClassesPage() {
+  return (
+    <ProtectedRoute>
+      <ClassesContent />
+    </ProtectedRoute>
   )
 } 

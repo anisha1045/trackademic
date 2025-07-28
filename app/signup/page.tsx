@@ -3,9 +3,11 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import Image from 'next/image'
+import { useAuth } from '@/lib/auth'
 
 export default function SignUpPage() {
   const router = useRouter()
+  const { signUp } = useAuth()
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -13,21 +15,36 @@ export default function SignUpPage() {
     college: '',
     password: '',
   })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value })
   }
 
-  const [loading, setLoading] = useState(false)
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError('')
+    setSuccess(false)
 
-    setTimeout(() => {
+    const { data, error: signUpError } = await signUp(form.email, form.password, {
+      name: form.name,
+      phone: form.phone,
+      college: form.college
+    })
+
+    if (signUpError) {
+      setError(signUpError.message)
       setLoading(false)
-      router.push('/set-up-profile')
-    }, 2000)
+    } else {
+      setSuccess(true)
+      setTimeout(() => {
+        setLoading(false)
+        router.push('/dashboard')
+      }, 2000)
+    }
   }
 
   return (
@@ -56,8 +73,43 @@ export default function SignUpPage() {
           <input type="password" name="password" placeholder="Password" onChange={handleChange} required
             className="p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-gray-800 placeholder-gray-400"/>
 
-          <button disabled={loading} type="submit" className="bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition font-semibold">
-            {loading ? 'Signing Up...' : 'Sign Up'}
+          {error && (
+            <p className="text-sm text-red-600 bg-red-100 px-4 py-2 rounded-lg">
+              {error}
+            </p>
+          )}
+
+          {success && (
+            <p className="text-sm text-green-600 bg-green-100 px-4 py-2 rounded-lg">
+              Account created successfully! Redirecting...
+            </p>
+          )}
+
+          <button disabled={loading} type="submit" className="bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition font-semibold flex items-center justify-center">
+            {loading ? (
+              <svg
+                className="animate-spin h-5 w-5 text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8v8z"
+                />
+              </svg>
+            ) : (
+              'Sign Up'
+            )}
           </button>
 
           <p className="text-sm text-gray-500 text-center">

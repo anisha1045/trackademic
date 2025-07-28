@@ -2,8 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import { useAuth } from '@/lib/auth'
 
-export default function AssignmentPage() {
+function AssignmentContent() {
+  const { user, signOut } = useAuth()
   const [assignments, setAssignments] = useState([])
   const [classes, setClasses] = useState([])
   const [showModal, setShowModal] = useState(false)
@@ -24,6 +27,13 @@ export default function AssignmentPage() {
     estimated_hours: 1
   })
   const router = useRouter()
+
+  const handleLogout = async () => {
+    const { error } = await signOut()
+    if (!error) {
+      router.push('/login')
+    }
+  }
 
   // Load existing assignments and classes on component mount
   useEffect(() => {
@@ -147,7 +157,8 @@ export default function AssignmentPage() {
           priority: aiAssignment.priority,
           estimated_time: aiAssignment.estimated_hours,
           type: aiAssignment.type || 'assignment',
-          status: 'pending'
+          status: 'pending',
+          user_id: user?.id
         }),
       })
 
@@ -236,7 +247,8 @@ export default function AssignmentPage() {
           priority: newAssignment.priority,
           estimated_time: newAssignment.estimated_hours,
           type: 'assignment',
-          status: 'pending'
+          status: 'pending',
+          user_id: user?.id
         }),
       })
 
@@ -292,7 +304,7 @@ export default function AssignmentPage() {
           <a href="/calendar" className="text-indigo-600 font-medium hover:underline">Calendar</a>
           <a href="/assignment" className="text-indigo-600 font-medium hover:underline border-b-2 border-indigo-600">Assignments</a>
           <a href="/classes" className="text-indigo-600 font-medium hover:underline">Classes</a>
-          <a href="#" className="text-red-500 font-medium hover:underline">Logout</a>
+          <button onClick={handleLogout} className="text-red-500 font-medium hover:underline">Logout</button>
         </div>
       </nav>
 
@@ -395,7 +407,7 @@ export default function AssignmentPage() {
                   placeholder="e.g., Math Homework Chapter 5"
                   value={newAssignment.title}
                   onChange={(e) => setNewAssignment({ ...newAssignment, title: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 placeholder-gray-500"
                 />
               </div>
 
@@ -409,7 +421,7 @@ export default function AssignmentPage() {
                   value={newAssignment.description}
                   onChange={(e) => setNewAssignment({ ...newAssignment, description: e.target.value })}
                   rows="3"
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 placeholder-gray-500"
                 />
               </div>
 
@@ -421,7 +433,7 @@ export default function AssignmentPage() {
                 <select
                   value={newAssignment.class_id}
                   onChange={(e) => setNewAssignment({ ...newAssignment, class_id: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
                 >
                   <option value="">Select a class</option>
                                      {classes.map((cls) => (
@@ -441,7 +453,7 @@ export default function AssignmentPage() {
                   type="datetime-local"
                   value={newAssignment.due_date}
                   onChange={(e) => setNewAssignment({ ...newAssignment, due_date: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
                 />
               </div>
 
@@ -453,7 +465,7 @@ export default function AssignmentPage() {
                 <select
                   value={newAssignment.priority}
                   onChange={(e) => setNewAssignment({ ...newAssignment, priority: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
                 >
                   <option value="low">Low</option>
                   <option value="medium">Medium</option>
@@ -473,7 +485,7 @@ export default function AssignmentPage() {
                   step="0.5"
                   value={newAssignment.estimated_hours}
                   onChange={(e) => setNewAssignment({ ...newAssignment, estimated_hours: parseFloat(e.target.value) })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 placeholder-gray-500"
                 />
               </div>
             </div>
@@ -703,5 +715,13 @@ export default function AssignmentPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function AssignmentPage() {
+  return (
+    <ProtectedRoute>
+      <AssignmentContent />
+    </ProtectedRoute>
   )
 }
