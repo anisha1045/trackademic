@@ -98,6 +98,7 @@ function AssignmentContent() {
     try {
       const response = await fetch(`/api/get-tasks${user ? `?user_id=${user.id}` : ''}`)
       const result = await response.json()
+      console.log('Load assignments result:', result.data)
       
       if (response.ok && result.success) {
         const tasks = result.data.map(task => ({
@@ -319,6 +320,14 @@ function AssignmentContent() {
         status: 'pending',
         user_id: user?.id,
       }
+
+      console.log('Assignment update request:', {
+        endpoint,
+        method,
+        isEditing,
+        editingAssignment,
+        requestData
+      })
   
       const response = await fetch(endpoint, {
         method,
@@ -327,8 +336,12 @@ function AssignmentContent() {
         },
         body: JSON.stringify(requestData),
       })
+
+      console.log('Response status:', response.status)
+      console.log('Response ok:', response.ok)
   
       const data = await response.json()
+      console.log('Response data:', data)
   
       if (response.ok) {
         setNewAssignment({
@@ -342,13 +355,14 @@ function AssignmentContent() {
         setShowModal(false)
         setIsEditing(false)
         setEditingAssignment(null)
-        loadAssignments()
+        loadAssignments() // Refresh the list
+        // Sync with Google Calendar after adding/editing
         await syncWithGoogleCalendar()
       } else {
         setError(data.error?.message || 'Failed to save assignment')
       }
     } catch (err) {
-      console.error('Network error:', err)
+      console.error('Network error details:', err)
       setError('Network error. Please try again.')
     } finally {
       setLoading(false)
@@ -467,15 +481,17 @@ function AssignmentContent() {
                     className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
                     title="Edit assignment"
                     onClick={() => {
+                      console.log('Edit assignment data:', assignment)
                       setEditingAssignment(assignment)
                       setNewAssignment({
                         title: assignment.title || '',
                         description: assignment.description || '',
-                        due_date: assignment.due_date?.slice(0, 16) || '',
+                        due_date: assignment.due_date?.slice(0, 16) || '', // trims to "YYYY-MM-DDTHH:MM"
                         class_id: assignment.class_id ? String(assignment.class_id) : '',
                         priority: assignment.priority || 'medium',
                         estimated_hours: assignment.estimated_hours || 1
                       })
+                      console.log('Setting newAssignment with class_id:', assignment.class_id ? String(assignment.class_id) : '')
                       setIsEditing(true)
                       setShowModal(true)
                     }}
@@ -486,13 +502,15 @@ function AssignmentContent() {
                     className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
                     title="Delete assignment"
                     onClick={async () => {
+                      console.log("About to delete assignment:", assignment.id)
                       try {
                         const response = await fetch(`/api/delete-task/${assignment.id}`, { method: 'DELETE' })
                         if (!response.ok) throw new Error('Delete failed')
                     
                         setAssignments((prev) => prev.filter((task) => task.id !== assignment.id))
+                        console.log('Deleted task:', assignment.id)
                       } catch (err) {
-                        console.error(err)
+                        console.error('Delete error:', err)
                       }
                     }}
                   >
@@ -729,6 +747,82 @@ function AssignmentContent() {
                   {uploadLoading ? 'Uploading...' : 'Upload'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Results Modal */}
+      {aiResults && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-indigo-600 mb-6">Syllabus Analysis Results</h2>
+            
+            {aiResults.assignments && aiResults.assignments.length > 0 && (
+              <div className="space-y-4">
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Class for All Assignments
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleAddAllAiAssignments(e.target.value)
+                      }
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
+                  >
+                    <option value="">Select a class to add all assignments</option>
+                    {classes.map((cls) => (
+                      <option key={cls.id} value={cls.id}>
+                        {cls.code ? `${cls.code} - ${cls.name}` : cls.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {aiResults.assignments.map((assignment, index) => (
+                    <div key={index} className="border rounded-lg p-4 bg-gray-50">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-semibold text-gray-800">{assignment.title}</h3>
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${getPriorityColor(assignment.priority)}`}>
+                          {assignment.priority}
+                        </span>
+                      </div>
+                      <p className="text-gray-600 text-sm mb-2">{assignment.description}</p>
+                      <div className="flex items-center justify-between text-sm text-gray-500">
+                        <span>Due: {assignment.due_date}</span>
+                        <span>{assignment.estimated_hours}h estimated</span>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        {classes.map((cls) => (
+                          <button
+                            key={cls.id}
+                            onClick={() => handleAddAiAssignment(assignment, cls.id)}
+                            className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded text-xs hover:bg-indigo-200 transition-colors"
+                          >
+                            Add to {cls.code || cls.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setAiResults(null)
+                  setSelectedFile(null)
+                  setShowUploadModal(false)
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
+import { Edit, Trash2 } from 'lucide-react'
 
 function ClassesContent() {
   const { user, signOut } = useAuth()
@@ -65,21 +66,34 @@ function ClassesContent() {
     setError('')
 
     try {
-      const url = editingClass ? `/api/update-class/${editingClass.id}` : '/api/add-class'
-      const method = editingClass ? 'PUT' : 'POST'
+      const url = editingClass ? `/api/edit-class/${editingClass.id}` : '/api/add-class'
+      const method = editingClass ? 'PATCH' : 'POST'
+      
+      // Debug logging
+      console.log('Edit request details:', {
+        url,
+        method,
+        editingClass,
+        newClass,
+        user_id: user?.id
+      })
       
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
         },
-                 body: JSON.stringify({
-           ...newClass,
-           user_id: user?.id
-         }),
+        body: JSON.stringify({
+          ...newClass,
+          user_id: user?.id
+        }),
       })
 
+      console.log('Response status:', response.status)
+      console.log('Response ok:', response.ok)
+
       const data = await response.json()
+      console.log('Response data:', data)
 
       if (response.ok) {
         resetForm()
@@ -89,6 +103,7 @@ function ClassesContent() {
         setError(data.error?.message || `Failed to ${editingClass ? 'update' : 'add'} class`)
       }
     } catch (err) {
+      console.error('Network error details:', err)
       setError('Network error. Please try again.')
     } finally {
       setLoading(false)
@@ -107,6 +122,8 @@ function ClassesContent() {
     })
     setShowModal(true)
   }
+
+
 
   const handleDelete = async (classId) => {
     if (!confirm('Are you sure you want to delete this class? This will also remove all associated assignments.')) {
@@ -182,24 +199,26 @@ function ClassesContent() {
         {/* Classes Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {classes.map((classItem) => (
-            <div key={classItem.id} className="bg-white rounded-3xl shadow-xl p-6 hover:shadow-2xl transition-shadow">
+            <div key={classItem.id} className="bg-white rounded-3xl shadow-xl p-6 hover:shadow-2xl transition-shadow group">
               <div className="flex items-start justify-between mb-4">
                 <div 
                   className="w-4 h-4 rounded-full"
                   style={{ backgroundColor: classItem.color || '#6366f1' }}
                 ></div>
-                <div className="flex gap-2">
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                   <button
                     onClick={() => handleEdit(classItem)}
-                    className="text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded hover:bg-indigo-50"
+                    className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
+                    title="Edit class"
                   >
-                    Edit
+                    <Edit className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => handleDelete(classItem.id)}
-                    className="text-red-600 hover:text-red-800 px-2 py-1 rounded hover:bg-red-50"
+                    className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
+                    title="Delete class"
                   >
-                    Delete
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               </div>

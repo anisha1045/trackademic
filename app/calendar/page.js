@@ -25,12 +25,43 @@ function CalendarContent() {
   const [googleEvents, setGoogleEvents] = useState([])
   const [loadingEvents, setLoadingEvents] = useState(false)
   const [selectedDateEvents, setSelectedDateEvents] = useState([])
+  const [events, setEvents] = useState([])
+  
+  // Mock calendar events - fallback when Google Calendar is not synced
+  const mockEvents = [
+    {
+      id: 1,
+      title: 'CS101 Lecture',
+      time: '9:00 AM',
+      date: '2025-01-15',
+      type: 'class',
+      color: 'bg-blue-500'
+    },
+    {
+      id: 2,
+      title: 'Math Assignment Due',
+      time: '11:59 PM',
+      date: '2025-01-16',
+      type: 'assignment',
+      color: 'bg-red-500'
+    },
+    {
+      id: 3,
+      title: 'Study Group',
+      time: '2:00 PM',
+      date: '2025-01-17',
+      type: 'study',
+      color: 'bg-green-500'
+    }
+  ]
 
   useEffect(() => {
     if (user?.id) {
       loadCalendarEvents()
       checkGoogleSyncStatus()
     }
+    // Initialize with mock events for fallback
+    setEvents(mockEvents)
     fetchEventsForSelectedDate()
   }, [user?.id])
 
@@ -137,10 +168,12 @@ function CalendarContent() {
       }
       
       const data = await response.json()
+      console.log("DATA: ", data)
+      // Ensure we always set an array, even if the response is null/undefined
       setSelectedDateEvents(Array.isArray(data.data) ? data.data : [])
     } catch (error) {
       console.error('Error fetching events:', error)
-      setSelectedDateEvents([])
+      setSelectedDateEvents([]) // Explicitly set empty array on error
     }
   }
 
@@ -148,6 +181,7 @@ function CalendarContent() {
     const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
     setSelectedDate(newDate)
     
+    // If in month view and we switch to week view, show the week containing the clicked date
     if (view === 'month') {
       const clickedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
       const startOfWeek = new Date(clickedDate)
@@ -187,23 +221,35 @@ function CalendarContent() {
            currentDate.getFullYear() === selectedDate.getFullYear()
   }
 
+  const isSelectedDate = (day) => {
+    return day === selectedDate.getDate() && 
+           currentDate.getMonth() === selectedDate.getMonth() && 
+           currentDate.getFullYear() === selectedDate.getFullYear()
+  }
+
   const getEventsForDay = (day, month = currentDate.getMonth(), year = currentDate.getFullYear()) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     
-    const googleEventsForDay = googleEvents.filter(event => {
-      const eventDate = new Date(event.start)
-      const eventDateStr = eventDate.toISOString().split('T')[0]
-      return eventDateStr === dateStr
-    }).map(event => ({
-      ...event,
-      time: event.isAllDay ? 'All day' : new Date(event.start).toLocaleTimeString('en-US', { 
-        hour: 'numeric', 
-        minute: '2-digit' 
-      }),
-      color: event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500' 
-    }))
+    // If Google Calendar is synced, show Google events
+    if (isGoogleSynced && googleEvents.length > 0) {
+      const googleEventsForDay = googleEvents.filter(event => {
+        const eventDate = new Date(event.start)
+        const eventDateStr = eventDate.toISOString().split('T')[0]
+        return eventDateStr === dateStr
+      }).map(event => ({
+        ...event,
+        time: event.isAllDay ? 'All day' : new Date(event.start).toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit' 
+        }),
+        color: event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500' 
+      }))
+      
+      return googleEventsForDay
+    }
     
-    return googleEventsForDay
+    // Fallback to mock events
+    return events.filter(event => event.date === dateStr)
   }
 
   const formatEventTime = (dateStr) => {
@@ -299,9 +345,10 @@ function CalendarContent() {
               </div>
               <button
                 onClick={handleSync}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={loading}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                Sync Now
+                {loading ? 'Syncing...' : 'Sync Now'}
               </button>
             </div>
             {message && (
@@ -335,12 +382,16 @@ function CalendarContent() {
                     day ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
                   } ${
                     isSelected(day) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+                  } ${
+                    isSelectedDate(day) ? 'ring-2 ring-blue-500 bg-blue-50' : ''
                   }`}
                 >
                   {day && (
                     <>
                       <div className={`text-sm font-medium mb-1 ${
-                        isSelected(day) ? 'text-indigo-600' : 'text-gray-900'
+                        isSelected(day) ? 'text-indigo-600' : 
+                        isSelectedDate(day) ? 'text-blue-600' : 
+                        'text-gray-900'
                       }`}>
                         {day}
                       </div>
@@ -371,6 +422,7 @@ function CalendarContent() {
                 const dayDate = new Date(date.setDate(startOfWeek + i))
                 const day = dayDate.getDate()
                 const isTodayDay = isSelected(day)
+                const isSelectedDay = isSelectedDate(day)
 
                 return (
                   <div
@@ -378,10 +430,14 @@ function CalendarContent() {
                     onClick={() => handleDayClick(day)}
                     className={`min-h-[120px] p-2 border border-gray-100 rounded-lg cursor-pointer bg-white hover:bg-gray-50 ${
                       isTodayDay ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+                    } ${
+                      isSelectedDay ? 'ring-2 ring-blue-500 bg-blue-50' : ''
                     }`}
                   >
                     <div className={`text-sm font-medium mb-1 ${
-                      isTodayDay ? 'text-indigo-600' : 'text-gray-900'
+                      isTodayDay ? 'text-indigo-600' : 
+                      isSelectedDay ? 'text-blue-600' : 
+                      'text-gray-900'
                     }`}>
                       {day}
                     </div>
@@ -439,13 +495,16 @@ function CalendarContent() {
         <div className="mt-6 bg-white rounded-3xl shadow-xl p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-bold text-indigo-600">
-              {googleEvents.length > 0 ? 'Upcoming Events' : `Tasks for ${formatDate(selectedDate)}`}
+              {isGoogleSynced && googleEvents.length > 0 ? 'Upcoming Events' : `Tasks for ${formatDate(selectedDate)}`}
             </h3>
+            {loadingEvents && (
+              <div className="text-sm text-gray-500">Loading...</div>
+            )}
           </div>
           
           <div className="space-y-3">
             {/* Google Calendar Events */}
-            {googleEvents.length > 0 ? (
+            {isGoogleSynced && googleEvents.length > 0 ? (
               googleEvents.slice(0, 5).map((event) => (
                 <div key={event.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
                   <div className={`w-3 h-3 rounded-full ${
