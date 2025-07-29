@@ -1,9 +1,11 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-export async function GET() {
+export async function DELETE(req, { params }) {
   try {
-    // Create authenticated Supabase client
+    const { id } = params
+
+    // Create Supabase client with auth context
     const cookieStore = await cookies()
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -21,23 +23,26 @@ export async function GET() {
         },
       }
     )
-    
-    // Get the current user (secure method)
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (userError || !user) {
-      console.error("Authentication error:", userError)
+
+    // Get current user session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+    if (sessionError || !session) {
+      console.error("Authentication error:", sessionError)
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get classes for the authenticated user (RLS will automatically filter)
+    console.log("Authenticated user session:", session)
+    console.log("Attempting to delete task with ID:", id)
+
+    // Delete the task
     const { data, error } = await supabase
-      .from('Classes')
-      .select('*')
-      .order('name')
+      .from('Tasks')
+      .delete()
+      .eq('id', id)
 
     if (error) {
-      console.error("Supabase select error:", error)
+      console.error("Supabase delete error:", error)
       return Response.json({ error }, { status: 500 })
     }
 
@@ -46,4 +51,4 @@ export async function GET() {
     console.error("API error:", err)
     return Response.json({ error: 'Internal server error' }, { status: 500 })
   }
-} 
+}

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
+import { FiEdit, FiTrash2 } from 'react-icons/fi'
 
 function AssignmentContent() {
   const { user, signOut } = useAuth()
@@ -14,10 +15,13 @@ function AssignmentContent() {
   const [loading, setLoading] = useState(false)
   const [uploadLoading, setUploadLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [editingAssignment, setEditingAssignment] = useState(null)
   const [uploadError, setUploadError] = useState('')
   const [selectedFile, setSelectedFile] = useState(null)
   const [aiResults, setAiResults] = useState(null)
   const [dragActive, setDragActive] = useState(false)
+  const [syncStatus, setSyncStatus] = useState(null)
   const [newAssignment, setNewAssignment] = useState({
     title: '',
     description: '',
@@ -74,7 +78,6 @@ function AssignmentContent() {
       if (response.ok && data.success) {
         setClasses(data.data || [])
       } else {
-        // Fallback to mock classes if API fails
         setClasses([
           { id: 1, name: 'Computer Science 101', code: 'CS101' },
           { id: 2, name: 'Mathematics', code: 'MATH101' },
@@ -83,7 +86,6 @@ function AssignmentContent() {
       }
     } catch (err) {
       console.error('Failed to load classes:', err)
-      // Fallback to mock classes
       setClasses([
         { id: 1, name: 'Computer Science 101', code: 'CS101' },
         { id: 2, name: 'Mathematics', code: 'MATH101' },
@@ -93,17 +95,86 @@ function AssignmentContent() {
   }
 
   const loadAssignments = async () => {
-    // Mock assignments - replace with actual API call
-    setAssignments([
-      {
-        id: 1,
-        title: 'Data Structures Homework',
-        description: 'Complete binary tree implementation',
-        due_date: '2025-01-20T23:59',
-        class_name: 'CS101',
-        priority: 'high'
+    try {
+      const response = await fetch(`/api/get-tasks${user ? `?user_id=${user.id}` : ''}`)
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        const tasks = result.data.map(task => ({
+          id: task.id,
+          title: task.title,
+          description: task.description || '',
+          due_date: task.due_date,
+          class_id: task.class_id,
+          class_name: task.class_name || '',
+          priority: task.priority || 'medium',
+          estimated_hours: task.estimated_time || 1
+        }))
+        setAssignments(tasks)
+      } else {
+        console.log('No tasks found or error fetching tasks')
+        setAssignments([])
       }
-    ])
+    } catch (err) {
+      console.error('Failed to load assignments:', err)
+      setAssignments([])
+    }
+  }
+
+  // Function to sync assignments with Google Calendar
+  const syncWithGoogleCalendar = async () => {
+    try {
+      setSyncStatus({
+        status: 'loading',
+        message: 'Syncing with Google Calendar...'
+      })
+      
+      const response = await fetch('/api/simple-calendar-sync?user_id=' + user.id, {
+        method: 'POST'
+      })
+      
+      const data = await response.json()
+      
+      if (response.status === 401 && data.needsAuth) {
+        // Redirect to Google authentication
+        setSyncStatus({
+          status: 'auth_needed',
+          message: 'Redirecting to Google authentication...'
+        })
+        
+        const authRes = await fetch(`/api/simple-calendar-auth?user_id=${user.id}`)
+        const authData = await authRes.json()
+        
+        if (authData.success && authData.authUrl) {
+          window.location.href = authData.authUrl
+        } else {
+          setSyncStatus({
+            status: 'error',
+            message: 'Error getting authentication URL'
+          })
+        }
+      } else if (response.ok) {
+        setSyncStatus({
+          status: 'success',
+          message: `Successfully synced assignments to Google Calendar`
+        })
+        
+        setTimeout(() => {
+          setSyncStatus(null)
+        }, 5000)
+      } else {
+        setSyncStatus({
+          status: 'error',
+          message: data.message || 'Failed to sync with Google Calendar'
+        })
+      }
+    } catch (err) {
+      console.error('Calendar sync error:', err)
+      setSyncStatus({
+        status: 'error',
+        message: 'Failed to connect to sync service.'
+      })
+    }
   }
 
   const handleFileUpload = async () => {
@@ -129,7 +200,6 @@ function AssignmentContent() {
       if (response.ok) {
         setAiResults(data)
         setUploadError('')
-        // Keep modal open to show results
       } else {
         setUploadError(data.error || 'Failed to parse file')
       }
@@ -140,61 +210,6 @@ function AssignmentContent() {
     }
   }
 
-  const handleAddAiAssignment = async (aiAssignment, classId) => {
-    setLoading(true)
-    
-    try {
-      const response = await fetch('/api/add-task', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title: aiAssignment.title,
-          description: aiAssignment.description,
-          due_date: aiAssignment.due_date ? `${aiAssignment.due_date}T23:59` : null,
-          class_id: classId,
-          priority: aiAssignment.priority,
-          estimated_time: aiAssignment.estimated_hours,
-          type: aiAssignment.type || 'assignment',
-          status: 'pending',
-          user_id: user?.id
-        }),
-      })
-
-      if (response.ok) {
-        loadAssignments() // Refresh the list
-        return true
-      } else {
-        console.error('Failed to add assignment')
-        return false
-      }
-    } catch (err) {
-      console.error('Error adding assignment:', err)
-      return false
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleAddAllAiAssignments = async (classId) => {
-    if (!aiResults?.assignments || !classId) return
-
-    let successCount = 0
-    for (const assignment of aiResults.assignments) {
-      const success = await handleAddAiAssignment(assignment, classId)
-      if (success) successCount++
-    }
-
-    alert(`Added ${successCount} of ${aiResults.assignments.length} assignments`)
-    
-    // Reset state and close modal
-    setAiResults(null)
-    setSelectedFile(null)
-    setShowUploadModal(false)
-  }
-
-  // Drag and drop handlers
   const handleDrag = (e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -212,8 +227,8 @@ function AssignmentContent() {
     
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0]
-             const allowedTypes = ['text/plain', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-       const allowedExtensions = /\.(txt|pdf|doc|docx|jpg|jpeg|png|gif|bmp|webp)$/i
+      const allowedTypes = ['text/plain', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+      const allowedExtensions = /\.(txt|pdf|doc|docx|jpg|jpeg|png|gif|bmp|webp)$/i
       
       if (allowedTypes.includes(file.type) || allowedExtensions.test(file.name) || file.type.startsWith('image/')) {
         setSelectedFile(file)
@@ -225,51 +240,59 @@ function AssignmentContent() {
   }
 
   const handleAddAssignment = async () => {
-    if (!newAssignment.title || !newAssignment.due_date || !newAssignment.class_id) {
-      setError('Please fill in all required fields')
+    if (!newAssignment.title || !newAssignment.due_date) {
+      setError('Please fill in title and due date')
       return
     }
-
+  
     setLoading(true)
     setError('')
-
+  
     try {
-      const response = await fetch('/api/add-task', {
-        method: 'POST',
+      const endpoint = isEditing ? `/api/edit-task/${editingAssignment.id}` : '/api/add-task'
+      const method = isEditing ? 'PATCH' : 'POST'
+
+      const requestData = {
+        title: newAssignment.title,
+        description: newAssignment.description,
+        due_date: newAssignment.due_date,
+        class_id: newAssignment.class_id,
+        priority: newAssignment.priority,
+        estimated_time: newAssignment.estimated_hours,
+        type: 'assignment',
+        status: 'pending',
+        user_id: user?.id,
+      }
+  
+      const response = await fetch(endpoint, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          title: newAssignment.title,
-          description: newAssignment.description,
-          due_date: newAssignment.due_date,
-          class_id: newAssignment.class_id,
-          priority: newAssignment.priority,
-          estimated_time: newAssignment.estimated_hours,
-          type: 'assignment',
-          status: 'pending',
-          user_id: user?.id
-        }),
+        body: JSON.stringify(requestData),
       })
-
+  
       const data = await response.json()
-
+  
       if (response.ok) {
-        // Reset form and close modal
         setNewAssignment({
           title: '',
           description: '',
           due_date: '',
           class_id: '',
           priority: 'medium',
-          estimated_hours: 1
+          estimated_hours: 1,
         })
         setShowModal(false)
-        loadAssignments() // Refresh the list
+        setIsEditing(false)
+        setEditingAssignment(null)
+        loadAssignments()
+        await syncWithGoogleCalendar()
       } else {
-        setError(data.error?.message || 'Failed to add assignment')
+        setError(data.error?.message || 'Failed to save assignment')
       }
     } catch (err) {
+      console.error('Network error:', err)
       setError('Network error. Please try again.')
     } finally {
       setLoading(false)
@@ -308,7 +331,6 @@ function AssignmentContent() {
         </div>
       </nav>
 
-      {/* Main Content */}
       <div className="max-w-6xl mx-auto p-6">
         {/* Header */}
         <div className="bg-white rounded-3xl shadow-xl p-6 mb-6">
@@ -337,6 +359,32 @@ function AssignmentContent() {
             </div>
           </div>
         </div>
+        
+        {/* Google Calendar Sync Button */}
+        <div className="bg-white rounded-3xl shadow-xl p-4 mb-6">
+          <div className="flex justify-between items-center">
+            <p className="font-medium text-gray-700">Sync assignments to Google Calendar</p>
+            <button
+              onClick={syncWithGoogleCalendar}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Sync Now
+            </button>
+          </div>
+          
+          {syncStatus && (
+            <div className="mt-3 text-sm">
+              <p className={`
+                ${syncStatus.status === 'loading' ? 'text-blue-600' : ''}
+                ${syncStatus.status === 'success' ? 'text-green-600' : ''}
+                ${syncStatus.status === 'error' ? 'text-red-600' : ''}
+                font-medium
+              `}>
+                {syncStatus.message}
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Assignments Grid */}
         <div className="grid gap-4">
@@ -358,12 +406,41 @@ function AssignmentContent() {
                     <span>Due: {formatDate(assignment.due_date)}</span>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button className="text-indigo-600 hover:text-indigo-800 px-3 py-1 rounded-lg hover:bg-indigo-50">
-                    Edit
+                <div className="flex gap-1">
+                  <button
+                    className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
+                    title="Edit assignment"
+                    onClick={() => {
+                      setEditingAssignment(assignment)
+                      setNewAssignment({
+                        title: assignment.title || '',
+                        description: assignment.description || '',
+                        due_date: assignment.due_date?.slice(0, 16) || '',
+                        class_id: assignment.class_id ? String(assignment.class_id) : '',
+                        priority: assignment.priority || 'medium',
+                        estimated_hours: assignment.estimated_hours || 1
+                      })
+                      setIsEditing(true)
+                      setShowModal(true)
+                    }}
+                  >
+                    <FiEdit className="w-4 h-4" />
                   </button>
-                  <button className="text-red-600 hover:text-red-800 px-3 py-1 rounded-lg hover:bg-red-50">
-                    Delete
+                  <button
+                    className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
+                    title="Delete assignment"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch(`/api/delete-task/${assignment.id}`, { method: 'DELETE' })
+                        if (!response.ok) throw new Error('Delete failed')
+                    
+                        setAssignments((prev) => prev.filter((task) => task.id !== assignment.id))
+                      } catch (err) {
+                        console.error(err)
+                      }
+                    }}
+                  >
+                    <FiTrash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -388,7 +465,9 @@ function AssignmentContent() {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-indigo-600 mb-6">Add New Assignment</h2>
+            <h2 className="text-2xl font-bold text-indigo-600 mb-6">
+              {isEditing ? 'Edit Assignment' : 'Add New Assignment'}
+            </h2>
             
             {error && (
               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">
@@ -428,19 +507,19 @@ function AssignmentContent() {
               {/* Class Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Class *
+                  Class
                 </label>
                 <select
                   value={newAssignment.class_id}
                   onChange={(e) => setNewAssignment({ ...newAssignment, class_id: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
                 >
-                  <option value="">Select a class</option>
-                                     {classes.map((cls) => (
-                     <option key={cls.id} value={cls.id}>
-                       {cls.code ? `${cls.code} - ${cls.name}` : cls.name}
-                     </option>
-                   ))}
+                  <option value="">No class (general assignment)</option>
+                  {classes.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.code ? `${cls.code} - ${cls.name}` : cls.name}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -495,6 +574,8 @@ function AssignmentContent() {
               <button
                 onClick={() => {
                   setShowModal(false)
+                  setIsEditing(false)
+                  setEditingAssignment(null)
                   setError('')
                   setNewAssignment({
                     title: '',
@@ -521,7 +602,7 @@ function AssignmentContent() {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
                 )}
-                {loading ? 'Adding...' : 'Add Assignment'}
+                {loading ? (isEditing ? 'Saving...' : 'Adding...') : isEditing ? 'Save Changes' : 'Add Assignment'}
               </button>
             </div>
           </div>
@@ -531,186 +612,68 @@ function AssignmentContent() {
       {/* Upload Syllabus Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-2xl font-bold text-green-600 mb-6">Upload Syllabus</h2>
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-indigo-600 mb-6">Upload Syllabus</h2>
             
-            {uploadError && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">
-                {uploadError}
+            <div className="space-y-4">
+              {uploadError && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4">
+                  {uploadError}
+                </div>
+              )}
+              
+              <div className="border-2 border-dashed rounded-lg p-8 text-center border-gray-300">
+                {selectedFile ? (
+                  <div>
+                    <p className="text-gray-800 font-medium">{selectedFile.name}</p>
+                    <p className="text-gray-500 text-sm mt-1">{(selectedFile.size / 1024).toFixed(2)} KB</p>
+                    <button
+                      className="mt-4 text-red-600 hover:text-red-800 text-sm font-medium"
+                      onClick={() => setSelectedFile(null)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-gray-700 mb-2">Drop syllabus file here or click to browse</p>
+                    <input
+                      type="file"
+                      onChange={(e) => setSelectedFile(e.target.files[0])}
+                      className="hidden"
+                      id="file-upload"
+                      accept=".pdf,.doc,.docx,.txt,image/*"
+                    />
+                    <label
+                      htmlFor="file-upload"
+                      className="mt-4 cursor-pointer inline-block px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition-colors text-sm font-medium"
+                    >
+                      Browse Files
+                    </label>
+                  </div>
+                )}
               </div>
-            )}
-
-            {!aiResults ? (
-              <div className="space-y-4">
-                {/* File Upload Area */}
-                <div 
-                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                    dragActive 
-                      ? 'border-green-500 bg-green-50' 
-                      : 'border-gray-300 hover:border-green-400'
-                  }`}
-                  onDragEnter={handleDrag}
-                  onDragLeave={handleDrag}
-                  onDragOver={handleDrag}
-                  onDrop={handleDrop}
+              
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowUploadModal(false)
+                    setSelectedFile(null)
+                    setUploadError('')
+                  }}
+                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
                 >
-                  <input
-                    type="file"
-                    accept=".txt,.doc,.docx,.pdf,.jpg,.jpeg,.png,.gif,.bmp,.webp"
-                    onChange={(e) => {
-                      const file = e.target.files[0]
-                      if (file) {
-                        setSelectedFile(file)
-                        setUploadError('')
-                      }
-                    }}
-                    className="hidden"
-                    id="file-upload"
-                  />
-                  <label htmlFor="file-upload" className="cursor-pointer">
-                    <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    <p className="text-lg font-medium text-gray-600 mb-2">
-                      {selectedFile ? selectedFile.name : (dragActive ? 'Drop file here' : 'Click to upload or drag and drop')}
-                    </p>
-                                         <p className="text-sm text-gray-500">
-                       Supports: TXT, DOC, DOCX, PDF, and Image files
-                     </p>
-                  </label>
-                </div>
-
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="font-semibold text-blue-800 mb-2">AI-Powered Assignment Extraction</h3>
-                  <p className="text-blue-600 text-sm mb-2">
-                    Upload your syllabus and our AI will automatically extract all assignments, due dates, and requirements!
-                  </p>
-                                     <div className="text-xs text-blue-500 mb-2">
-                     Supported: Text files (.txt) • PDF files • Images (JPG, PNG, etc.) • Word docs (.doc, .docx)
-                   </div>
-                   <div className="text-xs text-green-600 bg-green-50 border border-green-200 rounded p-2">
-                     PDF support enabled! Upload your PDF syllabus directly
-                   </div>
-                </div>
-
-                {/* Upload Actions */}
-                <div className="flex justify-end gap-3">
-                  <button
-                    onClick={() => {
-                      setShowUploadModal(false)
-                      setSelectedFile(null)
-                      setUploadError('')
-                    }}
-                    className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
-                    disabled={uploadLoading}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleFileUpload}
-                    disabled={!selectedFile || uploadLoading}
-                    className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    {uploadLoading && (
-                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    )}
-                    {uploadLoading ? 'Processing...' : 'Parse with AI'}
-                  </button>
-                </div>
+                  Cancel
+                </button>
+                <button
+                  onClick={handleFileUpload}
+                  disabled={!selectedFile || uploadLoading}
+                  className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {uploadLoading ? 'Uploading...' : 'Upload'}
+                </button>
               </div>
-            ) : (
-              /* AI Results Display */
-              <div className="space-y-4">
-                                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                   <h3 className="font-semibold text-green-800 mb-2">File Processed Successfully!</h3>
-                  <p className="text-green-600 text-sm">
-                    Found {aiResults.assignments_found} assignments in "{aiResults.file_name}"
-                  </p>
-                </div>
-
-                {/* Class Selection for All Assignments */}
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Class for All Assignments
-                  </label>
-                  <select
-                    id="bulk-class-select"
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                  >
-                    <option value="">Choose a class...</option>
-                    {classes.map((cls) => (
-                      <option key={cls.id} value={cls.id}>
-                        {cls.code ? `${cls.code} - ${cls.name}` : cls.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Assignment List */}
-                <div className="space-y-3 max-h-60 overflow-y-auto">
-                  {aiResults.assignments.map((assignment, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-4 bg-white">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-gray-800">{assignment.title}</h4>
-                          <p className="text-sm text-gray-600 mt-1">{assignment.description}</p>
-                          <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                            <span>Due: {assignment.due_date || 'Not specified'}</span>
-                            <span>Priority: {assignment.priority}</span>
-                            <span>Est. Hours: {assignment.estimated_hours}</span>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => {
-                            const classSelect = document.getElementById('bulk-class-select')
-                            const classId = classSelect.value
-                            if (classId) {
-                              handleAddAiAssignment(assignment, classId)
-                            } else {
-                              alert('Please select a class first')
-                            }
-                          }}
-                          className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Bulk Actions */}
-                <div className="flex justify-end gap-3 pt-4 border-t">
-                  <button
-                    onClick={() => {
-                      setAiResults(null)
-                      setSelectedFile(null)
-                      setShowUploadModal(false)
-                    }}
-                    className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      const classSelect = document.getElementById('bulk-class-select')
-                      const classId = classSelect.value
-                      if (classId) {
-                        handleAddAllAiAssignments(classId)
-                      } else {
-                        alert('Please select a class first')
-                      }
-                    }}
-                    className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
-                  >
-                    Add All Assignments
-                  </button>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         </div>
       )}

@@ -1,34 +1,96 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 
-const [loading, setLoading] = useState(false)
-const [message, setMessage] = useState(null)
-
-const handleSync = async () => {
-  setLoading(true)
-  setMessage(null)
-  try {
-    const res = await fetch('/api/sync-to-calendar?user_id=' + user.id, {
-      method: 'POST'
-    })
-    const data = await res.json()
-    setMessage(data.message || 'Synced!')
-  } catch (err) {
-    console.error('Sync error:', err)
-    setMessage('Failed to sync tasks.')
-  } finally {
-    setLoading(false)
-  }
-}
-
-
 function CalendarContent() {
   const { user, signOut } = useAuth()
   const router = useRouter()
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState(null)
+  const [showSyncPopup, setShowSyncPopup] = useState(false)
+  const [isGoogleSynced, setIsGoogleSynced] = useState(false)
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [view, setView] = useState('month') 
+  const [googleEvents, setGoogleEvents] = useState([])
+  const [loadingEvents, setLoadingEvents] = useState(false)
+
+  useEffect(() => {
+    if (user?.id) {
+      loadCalendarEvents()
+      checkGoogleSyncStatus()
+    }
+  }, [user?.id])
+
+  const checkGoogleSyncStatus = async () => {
+    try {
+      const res = await fetch(`/api/get-calendar-events?user_id=${user.id}`)
+      const data = await res.json()
+      setIsGoogleSynced(!data.needsAuth)
+    } catch (err) {
+      console.error('Error checking sync status:', err)
+    }
+  }
+
+  const handleSync = async () => {
+    setLoading(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/simple-calendar-sync?user_id=' + user.id, {
+        method: 'POST'
+      })
+      const data = await res.json()
+      
+      if (data.needsAuth) {
+        setMessage('Redirecting to Google authentication...')
+        const authRes = await fetch(`/api/simple-calendar-auth?user_id=${user.id}`)
+        const authData = await authRes.json()
+        
+        if (authData.success && authData.authUrl) {
+          window.location.href = authData.authUrl
+        } else {
+          setMessage('Error getting authentication URL')
+        }
+        return
+      }
+      
+      setMessage(data.message || 'Synced!')
+      setIsGoogleSynced(true)
+      setShowSyncPopup(false)
+      // After syncing, reload calendar events to show the new ones
+      loadCalendarEvents()
+    } catch (err) {
+      console.error('Sync error:', err)
+      setMessage('Failed to sync tasks.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadCalendarEvents = async () => {
+    setLoadingEvents(true)
+    try {
+      const res = await fetch(`/api/get-calendar-events?user_id=${user.id}`)
+      const data = await res.json()
+      
+      if (data.needsAuth) {
+        setGoogleEvents([])
+        return
+      }
+      
+      if (data.success) {
+        setGoogleEvents(data.events || [])
+      } else {
+        console.error('Failed to load calendar events:', data.message)
+      }
+    } catch (err) {
+      console.error('Error loading events:', err)
+    } finally {
+      setLoadingEvents(false)
+    }
+  }
 
   const handleLogout = async () => {
     const { error } = await signOut()
@@ -36,36 +98,6 @@ function CalendarContent() {
       router.push('/login')
     }
   }
-  const [currentDate, setCurrentDate] = useState(new Date())
-  const [view, setView] = useState('month') // day, week, month
-  
-  // Mock calendar events - will be replaced with Google Calendar data
-  const mockEvents = [
-    {
-      id: 1,
-      title: 'CS101 Lecture',
-      time: '9:00 AM',
-      date: '2025-01-15',
-      type: 'class',
-      color: 'bg-blue-500'
-    },
-    {
-      id: 2,
-      title: 'Math Assignment Due',
-      time: '11:59 PM',
-      date: '2025-01-16',
-      type: 'assignment',
-      color: 'bg-red-500'
-    },
-    {
-      id: 3,
-      title: 'Study Group',
-      time: '2:00 PM',
-      date: '2025-01-17',
-      type: 'study',
-      color: 'bg-green-500'
-    }
-  ]
 
   const formatDate = (date) => {
     return date.toLocaleDateString('en-US', {
@@ -112,7 +144,31 @@ function CalendarContent() {
 
   const getEventsForDay = (day) => {
     const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    return mockEvents.filter(event => event.date === dateStr)
+    
+    const googleEventsForDay = googleEvents.filter(event => {
+      const eventDate = new Date(event.start)
+      const eventDateStr = eventDate.toISOString().split('T')[0]
+      return eventDateStr === dateStr
+    }).map(event => ({
+      ...event,
+      time: event.isAllDay ? 'All day' : new Date(event.start).toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
+        minute: '2-digit' 
+      }),
+      color: event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500' 
+    }))
+    
+    return googleEventsForDay
+  }
+
+  const formatEventTime = (dateStr) => {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
   return (
@@ -183,20 +239,83 @@ function CalendarContent() {
           </div>
         </div>
 
-        {/* Calendar Grid */}
+        {/* Google Calendar Sync - Only shown if not yet synced */}
+        {!isGoogleSynced && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
+                </svg>
+                <div>
+                  <h3 className="font-semibold text-blue-800">Sync with Google Calendar</h3>
+                  <p className="text-blue-600 text-sm">Connect your Google Calendar to sync your tasks and events.</p>
+                </div>
+              </div>
+              <button
+                onClick={handleSync}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Sync Now
+              </button>
+            </div>
+            {message && (
+              <p className="mt-2 text-sm text-blue-700 font-medium">
+                {message}
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="bg-white rounded-3xl shadow-xl p-6">
-          {/* Google Calendar Integration Notice */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center gap-3">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <h3 className="font-semibold text-blue-800">Google Calendar Integration Coming Soon</h3>
-                <p className="text-blue-600 text-sm">Evin is working on syncing your Google Calendar events with Trackademic.</p>
+
+          {/* Sync Popup */}
+          {showSyncPopup && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-2xl p-6 w-96 max-w-md mx-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-indigo-600">Google Calendar Sync</h3>
+                  <button
+                    onClick={() => setShowSyncPopup(false)}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-gray-600 mb-6">
+                  Sync your Trackademic tasks with Google Calendar to keep everything in one place.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleSync}
+                    disabled={loading}
+                    className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {loading && (
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    )}
+                    {loading ? 'Syncing...' : 'Sync Tasks to Google Calendar'}
+                  </button>
+                  <button
+                    onClick={() => setShowSyncPopup(false)}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {message && (
+                  <p className="mt-3 text-sm text-gray-700 text-center">
+                    {message}
+                  </p>
+                )}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Days of week header */}
           <div className="grid grid-cols-7 gap-1 mb-2">
@@ -246,42 +365,40 @@ function CalendarContent() {
 
         {/* Upcoming Events Sidebar */}
         <div className="mt-6 bg-white rounded-3xl shadow-xl p-6">
-          <h3 className="text-xl font-bold text-indigo-600 mb-4">Upcoming Events</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold text-indigo-600">Upcoming Events</h3>
+          </div>
+          
           <div className="space-y-3">
-            {mockEvents.map((event) => (
-              <div key={event.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                <div className={`w-3 h-3 rounded-full ${event.color}`}></div>
+            {/* Google Calendar Events */}
+            {googleEvents.slice(0, 5).map((event) => (
+              <div key={event.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                <div className={`w-3 h-3 rounded-full ${
+                  event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500'
+                }`}></div>
                 <div className="flex-1">
                   <div className="font-medium text-gray-900">{event.title}</div>
-                  <div className="text-sm text-gray-600">{event.date} at {event.time}</div>
+                  <div className="text-sm text-gray-600">
+                    {formatEventTime(event.start)}
+                    {event.location && <span> • {event.location}</span>}
+                  </div>
                 </div>
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  event.type === 'class' ? 'bg-blue-100 text-blue-800' :
-                  event.type === 'assignment' ? 'bg-red-100 text-red-800' :
-                  'bg-green-100 text-green-800'
+                  event.title.startsWith('📚') ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
                 }`}>
-                  {event.type}
+                  {event.isGoogleEvent ? 'Google' : 'Local'}
                 </span>
               </div>
-
             ))}
-            {/* Sync Button */}
-<div className="mt-6 bg-white rounded-3xl shadow-xl p-6">
-  <h3 className="text-xl font-bold text-indigo-600 mb-4">Google Calendar Sync</h3>
-  <button
-    onClick={handleSync}
-    disabled={loading}
-    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-  >
-    {loading ? 'Syncing...' : 'Sync Tasks to Google Calendar'}
-  </button>
-  {message && (
-    <p className="mt-2 text-sm text-gray-700">
-      {message}
-    </p>
-  )}
-</div>
-
+            
+            {googleEvents.length === 0 && !loadingEvents && (
+              <div className="text-center py-8 text-gray-500">
+                <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
+                </svg>
+                <p className="text-sm font-medium">No upcoming events</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
