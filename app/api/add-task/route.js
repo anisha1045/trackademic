@@ -43,7 +43,10 @@ export async function POST(req) {
     // Insert with authenticated context
     const { data, error } = await supabase
       .from('Tasks')
-      .insert([{ ...body }])
+      .insert([{ 
+        ...body, 
+        class_id: body.class_id === '' ? null : parseInt(body.class_id) || null 
+      }])
 
     if (error) {
       console.error("Supabase insert error:", error)

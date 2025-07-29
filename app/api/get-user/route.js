@@ -37,10 +37,9 @@ export async function GET() {
 
     // Get tasks for the current user
     const { data: tasks, error } = await supabase
-      .from('Tasks')
+      .from('User Info')
       .select('*')
       .eq('user_id', session.user.id)
-      .order('due_date', { ascending: true })
 
     if (error) {
       console.error('Database error:', error)
