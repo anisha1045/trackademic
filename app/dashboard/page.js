@@ -29,14 +29,39 @@ function DashboardContent() {
   const [loadingTasks, setLoadingTasks] = useState(true)
   const [error, setError] = useState('')
   const [editingTask, setEditingTask] = useState(null)
-  const [newTask, setNewTask] = useState({ title: '', notes: '', due: '' })
+  const [newTask, setNewTask] = useState({
+    title: '',
+    notes: '',
+    due: '',
+    estimatedHours: '',
+    estimatedMinutes: '',
+    priority: '',
+  })
 
   // Load tasks from database
   useEffect(() => {
     if (user) {
       loadTasks()
+      // fetchChatCompletion('read chapters 1-3', 3)
     }
   }, [user])
+
+  const fetchChatCompletion = async (task, parts) => {
+    const response = await fetch('/api/split-task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, parts }),
+    })
+  
+    const data = await response.json()
+  
+    if (response.ok) {
+      const completion = data.choices[0].message.content
+      setTasks([completion]) // or your handler
+    } else {
+      console.error('Failed to fetch:', data)
+    }
+  }
 
   const loadTasks = async () => {
     try {
@@ -45,10 +70,43 @@ function DashboardContent() {
       const data = await response.json()
       
       if (response.ok) {
+        console.log("TASK DATA: ", data.data)
+        const today = new Date().toISOString().split('T')[0] // 'YYYY-MM-DD'
+
+      const todayTasks = data.data
+        .filter(task => task.due_date?.split('T')[0] === today)
+        .map(({ title, description, estimated_time, priority }) => ({
+          title,
+          description,
+          estimated_time,
+          priority,
+        }))
+
+        console.log("todays tasks: ", todayTasks)
+
         setTasks(data.data || [])
+
+        const schedule = "all day free";
+
+        const response = await fetch('/api/schedule-tasks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tasks: todayTasks, schedule
+          }),
+        })
+  
+        // const data = await response.json()
+        // console.log(data);
+
+        // GET CHAT TO SCHEDULE TASKS HERE
       } else {
         console.error('Failed to load tasks:', data.error)
       }
+
+
     } catch (err) {
       console.error('Error loading tasks:', err)
     } finally {
@@ -138,8 +196,8 @@ function DashboardContent() {
           due_date: newTask.due,
           type: 'task',
           status: 'pending',
-          priority: 'medium',
-          estimated_time: 1,
+          priority: newTask.priority,
+          estimated_time: newTask.estimatedHours * 60 + newTask.estimatedMinutes,
           user_id: user?.id
         }),
       })
@@ -246,6 +304,94 @@ function DashboardContent() {
     setEditingTask(null)
     setError('')
     setNewTask({ title: '', notes: '', due: '' })
+  }
+
+  const handleSubmitTask = () => {
+    const estimatedTotalMinutes =
+      Number(newTask.estimatedHours || 0) * 60 + Number(newTask.estimatedMinutes || 0)
+  
+    if (estimatedTotalMinutes >= 180) {
+      handleLongTask(newTask)
+    } else {
+      editingTask ? handleUpdateTask() : handleAddTask()
+    }
+  }
+
+  const handleLongTask = async (task) => {
+    const confirmSplit = window.confirm(
+      `This task is ${task.estimatedHours} hr ${task.estimatedMinutes} min long. Would you like to split it into smaller subtasks?`
+    );
+  
+    if (!confirmSplit) {
+      // If user says no, just submit as usual
+      editingTask ? handleUpdateTask() : handleAddTask();
+      return;
+    }
+  
+    // Ask focus time
+    const focusMinutes = parseInt(
+      prompt('How long can you focus at a time? (in minutes, e.g., 45)'),
+      10
+    );
+  
+    if (!focusMinutes || focusMinutes <= 0) {
+      alert('Invalid focus time.');
+      return;
+    }
+  
+    const totalMinutes =
+      Number(task.estimatedHours || 0) * 60 + Number(task.estimatedMinutes || 0);
+  
+    const parts = Math.ceil(totalMinutes / focusMinutes);
+  
+    splitTaskIntoSubtasks(task.title, parts, task, focusMinutes);
+  };
+
+  const splitTaskIntoSubtasks = async (taskTitle, parts, originalTask, focusMinutes) => {
+   console.log(taskTitle);
+   console.log(parts);
+   console.log(originalTask);
+   console.log(focusMinutes);
+   
+    const response = await fetch('/api/split-task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: taskTitle, parts }),
+    })
+  
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+  
+    if (!content) {
+      alert('Failed to split task.')
+      return
+    }
+  
+    const titles = content
+    .split('\n')
+    .map(line => line.replace(/^\d+\.\s*/, '').trim())
+    .filter(Boolean)
+
+  for (const title of titles) {
+    await fetch('/api/add-task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        description: originalTask.notes,
+        due_date: originalTask.due,
+        type: 'task',
+        status: 'pending',
+        priority: originalTask.priority,
+        estimated_time: focusMinutes,
+        user_id: user?.id,
+      }),
+    })
+  }
+
+  await loadTasks()
+  setShowModal(false)
+  setNewTask({ title: '', notes: '', due: '', estimatedHours: '', estimatedMinutes: '', priority: '' })
   }
 
   return (
@@ -421,12 +567,51 @@ function DashboardContent() {
               className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900 placeholder-gray-500"
               rows="3"
             />
+            <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
             <input
               type="datetime-local"
               value={newTask.due}
               onChange={(e) => setNewTask({ ...newTask, due: e.target.value })}
               className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900"
             />
+          </div>
+            <select
+            value={newTask.priority}
+            onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
+            className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900"
+          >
+            <option value="">Select Priority</option>
+            <option value="Low">Low</option>
+            <option value="Medium">Medium</option>
+            <option value="High">High</option>
+          </select>
+          <div>
+  <label className="block text-sm font-medium text-gray-700 mb-1">Estimated Time</label>
+  <div className="flex gap-2">
+    <select
+      value={newTask.estimatedHours || ''}
+      onChange={(e) => setNewTask({ ...newTask, estimatedHours: e.target.value })}
+      className="w-1/2 p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900"
+    >
+      <option value="">Hours</option>
+      {[...Array(13)].map((_, i) => (
+        <option key={i} value={i}>{i} hr</option>
+      ))}
+    </select>
+
+    <select
+      value={newTask.estimatedMinutes || ''}
+      onChange={(e) => setNewTask({ ...newTask, estimatedMinutes: e.target.value })}
+      className="w-1/2 p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-gray-900"
+    >
+      <option value="">Minutes</option>
+      {[0, 15, 30, 45].map((min) => (
+        <option key={min} value={min}>{min} min</option>
+      ))}
+    </select>
+  </div>
+</div>
             <div className="flex justify-end gap-2">
               <button
                 onClick={handleCloseModal}
@@ -436,7 +621,7 @@ function DashboardContent() {
                 Cancel
               </button>
               <button
-                onClick={editingTask ? handleUpdateTask : handleAddTask}
+                onClick={handleSubmitTask}
                 disabled={loading}
                 className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
               >
