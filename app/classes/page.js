@@ -65,8 +65,8 @@ function ClassesContent() {
     setError('')
 
     try {
-      const url = editingClass ? `/api/update-class/${editingClass.id}` : '/api/add-class'
-      const method = editingClass ? 'PUT' : 'POST'
+      const url = editingClass ? `/api/edit-class/${editingClass.id}` : '/api/add-class'
+      const method = editingClass ? 'PATCH' : 'POST'
       
       const response = await fetch(url, {
         method,
@@ -107,6 +107,8 @@ function ClassesContent() {
     })
     setShowModal(true)
   }
+
+
 
   const handleDelete = async (classId) => {
     if (!confirm('Are you sure you want to delete this class? This will also remove all associated assignments.')) {

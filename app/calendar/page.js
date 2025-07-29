@@ -1,22 +1,26 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 
+function CalendarPage() {
+  return (
+    <ProtectedRoute>
+      <CalendarContent />
+    </ProtectedRoute>
+  )
+}
+
 function CalendarContent() {
   const { user, signOut } = useAuth()
   const router = useRouter()
-
-  const handleLogout = async () => {
-    const { error } = await signOut()
-    if (!error) {
-      router.push('/login')
-    }
-  }
+  const [selectedDate, setSelectedDate] = useState(new Date())
   const [currentDate, setCurrentDate] = useState(new Date())
   const [view, setView] = useState('month') // day, week, month
+  const [events, setEvents] = useState([])
+  const [selectedDateEvents, setSelectedDateEvents] = useState([])
   
   // Mock calendar events - will be replaced with Google Calendar data
   const mockEvents = [
@@ -46,6 +50,16 @@ function CalendarContent() {
     }
   ]
 
+  useEffect(() => {
+    // Initialize with mock events for now
+    setEvents(mockEvents)
+    fetchEventsForSelectedDate()
+  }, [])
+
+  useEffect(() => {
+    fetchEventsForSelectedDate()
+  }, [selectedDate])
+
   const formatDate = (date) => {
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
@@ -53,6 +67,45 @@ function CalendarContent() {
       month: 'long',
       day: 'numeric'
     })
+  }
+
+  const formatDateToAPI = (date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const fetchEventsForSelectedDate = async () => {
+    try {
+      const formattedDate = formatDateToAPI(selectedDate);
+      const response = await fetch(`/api/get-tasks/${formattedDate}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks');
+      }
+      
+      const data = await response.json();
+      console.log("DATA: ", data);
+      // Ensure we always set an array, even if the response is null/undefined
+      setSelectedDateEvents(Array.isArray(data.data) ? data.data : []);
+    } catch (error) {
+      console.error('Error fetching events:', error);
+      setSelectedDateEvents([]); // Explicitly set empty array on error
+    }
+  };
+
+  const handleDayClick = (day) => {
+    const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
+    setSelectedDate(newDate)
+    
+    // If in month view and we switch to week view, show the week containing the clicked date
+    if (view === 'month') {
+      const clickedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
+      const startOfWeek = new Date(clickedDate)
+      startOfWeek.setDate(clickedDate.getDate() - clickedDate.getDay())
+      setCurrentDate(startOfWeek)
+    }
   }
 
   const getCalendarDays = () => {
@@ -82,16 +135,28 @@ function CalendarContent() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1))
   }
 
-  const isToday = (day) => {
-    const today = new Date()
-    return day === today.getDate() && 
-           currentDate.getMonth() === today.getMonth() && 
-           currentDate.getFullYear() === today.getFullYear()
+  const isSelected = (day) => {
+    return day === selectedDate.getDate() && 
+           currentDate.getMonth() === selectedDate.getMonth() && 
+           currentDate.getFullYear() === selectedDate.getFullYear()
   }
 
-  const getEventsForDay = (day) => {
-    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    return mockEvents.filter(event => event.date === dateStr)
+  const isSelectedDate = (day) => {
+    return day === selectedDate.getDate() && 
+           currentDate.getMonth() === selectedDate.getMonth() && 
+           currentDate.getFullYear() === selectedDate.getFullYear()
+  }
+
+  const getEventsForDay = (day, month = currentDate.getMonth(), year = currentDate.getFullYear()) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    return events.filter(event => event.date === dateStr)
+  }
+
+  const handleLogout = async () => {
+    const { error } = await signOut()
+    if (!error) {
+      router.push('/login')
+    }
   }
 
   return (
@@ -186,96 +251,129 @@ function CalendarContent() {
               </div>
             ))}
           </div>
-)}
+          )}
+          
           {/* Calendar View */}
-{view === 'month' && (
-  <div className="grid grid-cols-7 gap-1">
-    {getCalendarDays().map((day, index) => (
-      <div
-        key={index}
-        className={`min-h-[120px] p-2 border border-gray-100 rounded-lg ${
-          day ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
-        } ${isToday(day) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''}`}
-      >
-        {day && (
-          <>
-            <div className={`text-sm font-medium mb-1 ${
-              isToday(day) ? 'text-indigo-600' : 'text-gray-900'
-            }`}>
-              {day}
-            </div>
-            <div className="space-y-1">
-              {getEventsForDay(day).map((event) => (
+          {view === 'month' && (
+            <div className="grid grid-cols-7 gap-1">
+              {getCalendarDays().map((day, index) => (
                 <div
-                  key={event.id}
-                  className={`${event.color} text-white text-xs p-1 rounded truncate`}
-                  title={`${event.title} at ${event.time}`}
+                  key={index}
+                  onClick={() => day && handleDayClick(day)}
+                  className={`min-h-[120px] p-2 border border-gray-100 rounded-lg cursor-pointer ${
+                    day ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
+                  } ${
+                    isSelected(day) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+                  } ${
+                    isSelectedDate(day) ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+                  }`}
                 >
-                  <div className="font-medium">{event.time}</div>
-                  <div>{event.title}</div>
+                  {day && (
+                    <>
+                      <div className={`text-sm font-medium mb-1 ${
+                        isSelected(day) ? 'text-indigo-600' : 
+                        isSelectedDate(day) ? 'text-blue-600' : 
+                        'text-gray-900'
+                      }`}>
+                        {day}
+                      </div>
+                      <div className="space-y-1">
+                        {getEventsForDay(
+    day,
+    currentDate.getMonth(),
+    currentDate.getFullYear()
+  ).map((event) => (
+                          <div
+                            key={event.id}
+                            className={`${event.color} text-white text-xs p-1 rounded truncate`}
+                            title={`${event.title} at ${event.time}`}
+                          >
+                            <div className="font-medium">{event.time}</div>
+                            <div>{event.title}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
-          </>
-        )}
-      </div>
-    ))}
-  </div>
-)}
+          )}
 
-{view === 'week' && (
-  <div className="grid grid-cols-7 gap-1">
-    {[...Array(7)].map((_, i) => {
-      const date = new Date(currentDate)
-      const startOfWeek = date.getDate() - date.getDay()
-      const dayDate = new Date(date.setDate(startOfWeek + i))
-      const day = dayDate.getDate()
-      const isTodayDay = isToday(day)
+          {view === 'week' && (
+            <div className="grid grid-cols-7 gap-1">
+              {[...Array(7)].map((_, i) => {
+                const date = new Date(currentDate)
+                const startOfWeek = date.getDate() - date.getDay()
+                const dayDate = new Date(date.setDate(startOfWeek + i))
+                const day = dayDate.getDate()
+                const isTodayDay = isSelected(day)
+                const isSelectedDay = isSelectedDate(day)
 
-      return (
-        <div
-          key={i}
-          className={`min-h-[120px] p-2 border border-gray-100 rounded-lg bg-white hover:bg-gray-50 ${
-            isTodayDay ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
-          }`}
-        >
-          <div className={`text-sm font-medium mb-1 ${
-            isTodayDay ? 'text-indigo-600' : 'text-gray-900'
-          }`}>
-            {day}
-          </div>
-          <div className="space-y-1">
-            {getEventsForDay(day).map(event => (
-              <div
-                key={event.id}
-                className={`${event.color} text-white text-xs p-1 rounded truncate`}
-              >
-                <div className="font-medium">{event.time}</div>
-                <div>{event.title}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )
-    })}
-  </div>
-)}
+                return (
+                  <div
+                    key={i}
+                    onClick={() => handleDayClick(day)}
+                    className={`min-h-[120px] p-2 border border-gray-100 rounded-lg cursor-pointer bg-white hover:bg-gray-50 ${
+                      isTodayDay ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+                    } ${
+                      isSelectedDay ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+                    }`}
+                  >
+                    <div className={`text-sm font-medium mb-1 ${
+                      isTodayDay ? 'text-indigo-600' : 
+                      isSelectedDay ? 'text-blue-600' : 
+                      'text-gray-900'
+                    }`}>
+                      {day}
+                    </div>
+                    <div className="space-y-1">
+                      {getEventsForDay(
+    day,
+    currentDate.getMonth(),
+    currentDate.getFullYear()
+  ).map(event => (
+                        <div
+                          key={event.id}
+                          className={`${event.color} text-white text-xs p-1 rounded truncate`}
+                        >
+                          <div className="font-medium">{event.time}</div>
+                          <div>{event.title}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
 {view === 'day' && (
   <div className="w-full">
     <div
-      className={`w-full min-h-[300px] p-4 border border-gray-100 rounded-lg bg-white hover:bg-gray-50 ${
-        isToday(currentDate.getDate()) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+      onClick={() => handleDayClick(selectedDate.getDate())}
+      className={`w-full min-h-[300px] p-4 border border-gray-100 rounded-lg cursor-pointer bg-white hover:bg-gray-50 ${
+        isSelected(selectedDate.getDate()) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
       }`}
     >
-      <div className="text-lg font-bold text-indigo-600 mb-2">
-        {formatDate(currentDate)}
+      <div className={`text-lg font-bold mb-2 ${
+        isSelected(selectedDate.getDate()) ? 'text-indigo-600' : 'text-gray-900'
+      }`}>
+        {formatDate(selectedDate)}
       </div>
-      {getEventsForDay(currentDate.getDate()).length === 0 ? (
+      {getEventsForDay(
+            selectedDate.getDate(),
+            selectedDate.getMonth(),
+            selectedDate.getFullYear()
+          ).length === 0 ? (
         <p className="text-gray-500 text-sm">No events for this day.</p>
       ) : (
         <div className="space-y-2">
-          {getEventsForDay(currentDate.getDate()).map(event => (
+          {getEventsForDay(
+            selectedDate.getDate(),
+            selectedDate.getMonth(),
+            selectedDate.getFullYear()
+          ).map(event => (
             <div
               key={event.id}
               className={`${event.color} text-white text-xs p-2 rounded`}
@@ -291,37 +389,39 @@ function CalendarContent() {
 )}
         </div>
 
-        {/* Upcoming Events Sidebar */}
+        {/* Upcoming Events Sidebar - Now shows events for selected date */}
         <div className="mt-6 bg-white rounded-3xl shadow-xl p-6">
-          <h3 className="text-xl font-bold text-indigo-600 mb-4">Upcoming Events</h3>
-          <div className="space-y-3">
-            {mockEvents.map((event) => (
-              <div key={event.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                <div className={`w-3 h-3 rounded-full ${event.color}`}></div>
-                <div className="flex-1">
-                  <div className="font-medium text-gray-900">{event.title}</div>
-                  <div className="text-sm text-gray-600">{event.date} at {event.time}</div>
-                </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  event.type === 'class' ? 'bg-blue-100 text-blue-800' :
-                  event.type === 'assignment' ? 'bg-red-100 text-red-800' :
-                  'bg-green-100 text-green-800'
-                }`}>
-                  {event.type}
-                </span>
-              </div>
-            ))}
+  <h3 className="text-xl font-bold text-indigo-600 mb-4">
+    Tasks for {formatDate(selectedDate)}
+  </h3>
+  {selectedDateEvents.length === 0 ? (
+    <p className="text-gray-500">No tasks for the selected date.</p>
+  ) : (
+    <div className="space-y-3">
+      {selectedDateEvents.map((event) => (
+        <div key={event.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+          <div className={`w-3 h-3 rounded-full ${event.color || 'bg-blue-500'}`}></div>
+          <div className="flex-1">
+            <div className="font-medium text-gray-900">{event.title}</div>
+            <div className="text-sm text-gray-600">
+              {event.date} at {event.time || 'All day'}
+            </div>
           </div>
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+            event.type === 'class' ? 'bg-blue-100 text-blue-800' :
+            event.type === 'assignment' ? 'bg-red-100 text-red-800' :
+            'bg-green-100 text-green-800'
+          }`}>
+            {event.type}
+          </span>
         </div>
+      ))}
+    </div>
+  )}
+</div>
       </div>
     </div>
   )
 }
 
-export default function CalendarPage() {
-  return (
-    <ProtectedRoute>
-      <CalendarContent />
-    </ProtectedRoute>
-  )
-}
+export default CalendarPage
