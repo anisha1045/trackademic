@@ -5,24 +5,38 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 
+function CalendarPage() {
+  return (
+    <ProtectedRoute>
+      <CalendarContent />
+    </ProtectedRoute>
+  )
+}
+
 function CalendarContent() {
   const { user, signOut } = useAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null)
-  const [showSyncPopup, setShowSyncPopup] = useState(false)
   const [isGoogleSynced, setIsGoogleSynced] = useState(false)
+  const [selectedDate, setSelectedDate] = useState(new Date())
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [view, setView] = useState('month') 
+  const [view, setView] = useState('month')
   const [googleEvents, setGoogleEvents] = useState([])
   const [loadingEvents, setLoadingEvents] = useState(false)
+  const [selectedDateEvents, setSelectedDateEvents] = useState([])
 
   useEffect(() => {
     if (user?.id) {
       loadCalendarEvents()
       checkGoogleSyncStatus()
     }
+    fetchEventsForSelectedDate()
   }, [user?.id])
+
+  useEffect(() => {
+    fetchEventsForSelectedDate()
+  }, [selectedDate])
 
   const checkGoogleSyncStatus = async () => {
     try {
@@ -58,8 +72,6 @@ function CalendarContent() {
       
       setMessage(data.message || 'Synced!')
       setIsGoogleSynced(true)
-      setShowSyncPopup(false)
-      // After syncing, reload calendar events to show the new ones
       loadCalendarEvents()
     } catch (err) {
       console.error('Sync error:', err)
@@ -108,6 +120,42 @@ function CalendarContent() {
     })
   }
 
+  const formatDateToAPI = (date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const fetchEventsForSelectedDate = async () => {
+    try {
+      const formattedDate = formatDateToAPI(selectedDate)
+      const response = await fetch(`/api/get-tasks/${formattedDate}`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks')
+      }
+      
+      const data = await response.json()
+      setSelectedDateEvents(Array.isArray(data.data) ? data.data : [])
+    } catch (error) {
+      console.error('Error fetching events:', error)
+      setSelectedDateEvents([])
+    }
+  }
+
+  const handleDayClick = (day) => {
+    const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
+    setSelectedDate(newDate)
+    
+    if (view === 'month') {
+      const clickedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
+      const startOfWeek = new Date(clickedDate)
+      startOfWeek.setDate(clickedDate.getDate() - clickedDate.getDay())
+      setCurrentDate(startOfWeek)
+    }
+  }
+
   const getCalendarDays = () => {
     const year = currentDate.getFullYear()
     const month = currentDate.getMonth()
@@ -118,12 +166,10 @@ function CalendarContent() {
 
     const days = []
     
-    // Add empty cells for days before the first day of the month
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null)
     }
     
-    // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       days.push(day)
     }
@@ -135,15 +181,14 @@ function CalendarContent() {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1))
   }
 
-  const isToday = (day) => {
-    const today = new Date()
-    return day === today.getDate() && 
-           currentDate.getMonth() === today.getMonth() && 
-           currentDate.getFullYear() === today.getFullYear()
+  const isSelected = (day) => {
+    return day === selectedDate.getDate() && 
+           currentDate.getMonth() === selectedDate.getMonth() && 
+           currentDate.getFullYear() === selectedDate.getFullYear()
   }
 
-  const getEventsForDay = (day) => {
-    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  const getEventsForDay = (day, month = currentDate.getMonth(), year = currentDate.getFullYear()) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     
     const googleEventsForDay = googleEvents.filter(event => {
       const eventDate = new Date(event.start)
@@ -239,7 +284,7 @@ function CalendarContent() {
           </div>
         </div>
 
-        {/* Google Calendar Sync - Only shown if not yet synced */}
+        {/* Google Calendar Sync */}
         {!isGoogleSynced && (
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-6">
             <div className="flex items-center justify-between">
@@ -268,149 +313,190 @@ function CalendarContent() {
         )}
 
         <div className="bg-white rounded-3xl shadow-xl p-6">
-
-          {/* Sync Popup */}
-          {showSyncPopup && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-2xl p-6 w-96 max-w-md mx-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-bold text-indigo-600">Google Calendar Sync</h3>
-                  <button
-                    onClick={() => setShowSyncPopup(false)}
-                    className="text-gray-500 hover:text-gray-700"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+          {/* Days of week header */}
+          {view !== 'day' && (
+            <div className="grid grid-cols-7 gap-1 mb-2">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                <div key={day} className="p-2 text-center font-semibold text-gray-700 bg-gray-50 rounded-lg">
+                  {day}
                 </div>
-                <p className="text-gray-600 mb-6">
-                  Sync your Trackademic tasks with Google Calendar to keep everything in one place.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleSync}
-                    disabled={loading}
-                    className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {loading && (
-                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    )}
-                    {loading ? 'Syncing...' : 'Sync Tasks to Google Calendar'}
-                  </button>
-                  <button
-                    onClick={() => setShowSyncPopup(false)}
-                    className="px-4 py-2 text-gray-600 hover:text-gray-800"
-                  >
-                    Cancel
-                  </button>
+              ))}
+            </div>
+          )}
+          
+          {/* Calendar View */}
+          {view === 'month' && (
+            <div className="grid grid-cols-7 gap-1">
+              {getCalendarDays().map((day, index) => (
+                <div
+                  key={index}
+                  onClick={() => day && handleDayClick(day)}
+                  className={`min-h-[120px] p-2 border border-gray-100 rounded-lg cursor-pointer ${
+                    day ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
+                  } ${
+                    isSelected(day) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+                  }`}
+                >
+                  {day && (
+                    <>
+                      <div className={`text-sm font-medium mb-1 ${
+                        isSelected(day) ? 'text-indigo-600' : 'text-gray-900'
+                      }`}>
+                        {day}
+                      </div>
+                      <div className="space-y-1">
+                        {getEventsForDay(day, currentDate.getMonth(), currentDate.getFullYear()).map((event) => (
+                          <div
+                            key={event.id}
+                            className={`${event.color} text-white text-xs p-1 rounded truncate`}
+                            title={`${event.title} at ${event.time}`}
+                          >
+                            <div className="font-medium">{event.time}</div>
+                            <div>{event.title}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
-                {message && (
-                  <p className="mt-3 text-sm text-gray-700 text-center">
-                    {message}
-                  </p>
-                )}
-              </div>
+              ))}
             </div>
           )}
 
-          {/* Days of week header */}
-          <div className="grid grid-cols-7 gap-1 mb-2">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-              <div key={day} className="p-2 text-center font-semibold text-gray-700 bg-gray-50 rounded-lg">
-                {day}
-              </div>
-            ))}
-          </div>
+          {view === 'week' && (
+            <div className="grid grid-cols-7 gap-1">
+              {[...Array(7)].map((_, i) => {
+                const date = new Date(currentDate)
+                const startOfWeek = date.getDate() - date.getDay()
+                const dayDate = new Date(date.setDate(startOfWeek + i))
+                const day = dayDate.getDate()
+                const isTodayDay = isSelected(day)
 
-          {/* Calendar Days */}
-          <div className="grid grid-cols-7 gap-1">
-            {getCalendarDays().map((day, index) => (
-              <div
-                key={index}
-                className={`min-h-[120px] p-2 border border-gray-100 rounded-lg ${
-                  day ? 'bg-white hover:bg-gray-50' : 'bg-gray-50'
-                } ${isToday(day) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''}`}
-              >
-                {day && (
-                  <>
+                return (
+                  <div
+                    key={i}
+                    onClick={() => handleDayClick(day)}
+                    className={`min-h-[120px] p-2 border border-gray-100 rounded-lg cursor-pointer bg-white hover:bg-gray-50 ${
+                      isTodayDay ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+                    }`}
+                  >
                     <div className={`text-sm font-medium mb-1 ${
-                      isToday(day) ? 'text-indigo-600' : 'text-gray-900'
+                      isTodayDay ? 'text-indigo-600' : 'text-gray-900'
                     }`}>
                       {day}
                     </div>
-                    
-                    {/* Events for this day */}
                     <div className="space-y-1">
-                      {getEventsForDay(day).map((event) => (
+                      {getEventsForDay(day, currentDate.getMonth(), currentDate.getFullYear()).map(event => (
                         <div
                           key={event.id}
                           className={`${event.color} text-white text-xs p-1 rounded truncate`}
-                          title={`${event.title} at ${event.time}`}
                         >
                           <div className="font-medium">{event.time}</div>
                           <div>{event.title}</div>
                         </div>
                       ))}
                     </div>
-                  </>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {view === 'day' && (
+            <div className="w-full">
+              <div
+                onClick={() => handleDayClick(selectedDate.getDate())}
+                className={`w-full min-h-[300px] p-4 border border-gray-100 rounded-lg cursor-pointer bg-white hover:bg-gray-50 ${
+                  isSelected(selectedDate.getDate()) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+                }`}
+              >
+                <div className={`text-lg font-bold mb-2 ${
+                  isSelected(selectedDate.getDate()) ? 'text-indigo-600' : 'text-gray-900'
+                }`}>
+                  {formatDate(selectedDate)}
+                </div>
+                {getEventsForDay(selectedDate.getDate(), selectedDate.getMonth(), selectedDate.getFullYear()).length === 0 ? (
+                  <p className="text-gray-500 text-sm">No events for this day.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {getEventsForDay(selectedDate.getDate(), selectedDate.getMonth(), selectedDate.getFullYear()).map(event => (
+                      <div
+                        key={event.id}
+                        className={`${event.color} text-white text-xs p-2 rounded`}
+                      >
+                        <div className="font-medium">{event.time}</div>
+                        <div>{event.title}</div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* Upcoming Events Sidebar */}
+        {/* Events Sidebar */}
         <div className="mt-6 bg-white rounded-3xl shadow-xl p-6">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-xl font-bold text-indigo-600">Upcoming Events</h3>
+            <h3 className="text-xl font-bold text-indigo-600">
+              {googleEvents.length > 0 ? 'Upcoming Events' : `Tasks for ${formatDate(selectedDate)}`}
+            </h3>
           </div>
           
           <div className="space-y-3">
             {/* Google Calendar Events */}
-            {googleEvents.slice(0, 5).map((event) => (
-              <div key={event.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                <div className={`w-3 h-3 rounded-full ${
-                  event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500'
-                }`}></div>
-                <div className="flex-1">
-                  <div className="font-medium text-gray-900">{event.title}</div>
-                  <div className="text-sm text-gray-600">
-                    {formatEventTime(event.start)}
-                    {event.location && <span> • {event.location}</span>}
+            {googleEvents.length > 0 ? (
+              googleEvents.slice(0, 5).map((event) => (
+                <div key={event.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                  <div className={`w-3 h-3 rounded-full ${
+                    event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500'
+                  }`}></div>
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">{event.title}</div>
+                    <div className="text-sm text-gray-600">
+                      {formatEventTime(event.start)}
+                      {event.location && <span> • {event.location}</span>}
+                    </div>
                   </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    event.title.startsWith('📚') ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {event.isGoogleEvent ? 'Google' : 'Local'}
+                  </span>
                 </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  event.title.startsWith('📚') ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                }`}>
-                  {event.isGoogleEvent ? 'Google' : 'Local'}
-                </span>
-              </div>
-            ))}
-            
-            {googleEvents.length === 0 && !loadingEvents && (
+              ))
+            ) : selectedDateEvents.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
                 </svg>
-                <p className="text-sm font-medium">No upcoming events</p>
+                <p className="text-sm font-medium">No tasks for the selected date</p>
               </div>
+            ) : (
+              selectedDateEvents.map((event) => (
+                <div key={event.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div className={`w-3 h-3 rounded-full ${event.color || 'bg-blue-500'}`}></div>
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">{event.title}</div>
+                    <div className="text-sm text-gray-600">
+                      {event.date} at {event.time || 'All day'}
+                    </div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    event.type === 'class' ? 'bg-blue-100 text-blue-800' :
+                    event.type === 'assignment' ? 'bg-red-100 text-red-800' :
+                    'bg-green-100 text-green-800'
+                  }`}>
+                    {event.type}
+                  </span>
+                </div>
+              ))
             )}
           </div>
         </div>
       </div>
     </div>
   )
-  
 }
 
-export default function CalendarPage() {
-  return (
-    <ProtectedRoute>
-      <CalendarContent />
-    </ProtectedRoute>
-  )
-}
+export default CalendarPage

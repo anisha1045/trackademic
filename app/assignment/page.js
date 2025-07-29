@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
-import { FiEdit, FiTrash2 } from 'react-icons/fi'
+import { Edit, Trash2 } from 'lucide-react'
 
 function AssignmentContent() {
   const { user, signOut } = useAuth()
@@ -210,6 +210,62 @@ function AssignmentContent() {
     }
   }
 
+  const handleAddAiAssignment = async (aiAssignment, classId) => {
+    setLoading(true)
+    
+    try {
+      const response = await fetch('/api/add-task', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: aiAssignment.title,
+          description: aiAssignment.description,
+          due_date: aiAssignment.due_date ? `${aiAssignment.due_date}T23:59` : null,
+          class_id: classId,
+          priority: aiAssignment.priority,
+          estimated_time: aiAssignment.estimated_hours,
+          type: aiAssignment.type || 'assignment',
+          status: 'pending',
+          user_id: user?.id,
+          assignment: true,
+        }),
+      })
+
+      if (response.ok) {
+        loadAssignments() // Refresh the list
+        return true
+      } else {
+        console.error('Failed to add assignment')
+        return false
+      }
+    } catch (err) {
+      console.error('Error adding assignment:', err)
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAddAllAiAssignments = async (classId) => {
+    if (!aiResults?.assignments || !classId) return
+
+    let successCount = 0
+    for (const assignment of aiResults.assignments) {
+      const success = await handleAddAiAssignment(assignment, classId)
+      if (success) successCount++
+    }
+
+    alert(`Added ${successCount} of ${aiResults.assignments.length} assignments`)
+    
+    // Reset state and close modal
+    setAiResults(null)
+    setSelectedFile(null)
+    setShowUploadModal(false)
+  }
+
+  // Drag and drop handlers
   const handleDrag = (e) => {
     e.preventDefault()
     e.stopPropagation()
@@ -424,7 +480,7 @@ function AssignmentContent() {
                       setShowModal(true)
                     }}
                   >
-                    <FiEdit className="w-4 h-4" />
+                    <Edit className="w-4 h-4" />
                   </button>
                   <button
                     className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
@@ -440,7 +496,7 @@ function AssignmentContent() {
                       }
                     }}
                   >
-                    <FiTrash2 className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>

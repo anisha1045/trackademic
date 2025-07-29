@@ -27,7 +27,7 @@ export async function GET(req) {
       access_type: 'offline',
       scope: scopes,
       prompt: 'consent',
-      state: userId // Pass user ID in state
+      state: userId 
     });
 
     return NextResponse.json({
@@ -36,7 +36,7 @@ export async function GET(req) {
       message: 'Click the authUrl to authenticate with Google Calendar',
       instructions: [
         '1. Click the authUrl below',
-        '2. Sign in with stclairevin@gmail.com', 
+        '2. Sign in with your email', 
         '3. Grant calendar permissions',
         '4. You will be redirected back to the app',
         '5. Then try the calendar sync again'
@@ -64,10 +64,7 @@ export async function POST(req) {
       }, { status: 400 });
     }
 
-    // Exchange code for tokens
     const { tokens } = await oauth2Client.getToken(code);
-    
-    // Store tokens using shared storage
     setUserTokens(userId, tokens);
 
     return NextResponse.json({

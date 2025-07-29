@@ -17,7 +17,6 @@ export async function GET(req) {
       return NextResponse.json({ message: 'User ID missing' }, { status: 400 });
     }
 
-    // Check if user has tokens using shared storage
     const userTokens = getUserTokens(userId);
     
     if (!userTokens) {
@@ -28,7 +27,6 @@ export async function GET(req) {
       }, { status: 401 });
     }
 
-    // Set up Google Calendar client with tokens
     oauth2Client.setCredentials({
       access_token: userTokens.access_token,
       refresh_token: userTokens.refresh_token
@@ -36,7 +34,6 @@ export async function GET(req) {
 
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-    // Get events from now to 30 days from now
     const timeMin = new Date().toISOString();
     const timeMax = new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString();
 
@@ -51,7 +48,6 @@ export async function GET(req) {
 
     const events = response.data.items || [];
     
-    // Format events for the frontend
     const formattedEvents = events.map(event => ({
       id: event.id,
       title: event.summary || 'Untitled Event',
@@ -59,9 +55,9 @@ export async function GET(req) {
       start: event.start.dateTime || event.start.date,
       end: event.end.dateTime || event.end.date,
       location: event.location || '',
-      isAllDay: !event.start.dateTime, // If no dateTime, it's an all-day event
+      isAllDay: !event.start.dateTime, 
       isGoogleEvent: true,
-      color: 'bg-blue-500', // Default color for Google events
+      color: 'bg-blue-500', 
       htmlLink: event.htmlLink
     }));
 
@@ -76,7 +72,6 @@ export async function GET(req) {
     console.error('Error fetching calendar events:', error);
     
     if (error.code === 401) {
-      // Token expired or invalid - getUserTokens already handles cleanup
       return NextResponse.json({ 
         message: 'Authentication expired. Please re-authenticate.',
         needsAuth: true,
