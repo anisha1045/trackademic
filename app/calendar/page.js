@@ -16,13 +16,18 @@ function CalendarPage() {
 function CalendarContent() {
   const { user, signOut } = useAuth()
   const router = useRouter()
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState(null)
+  const [isGoogleSynced, setIsGoogleSynced] = useState(false)
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [currentDate, setCurrentDate] = useState(new Date())
-  const [view, setView] = useState('month') // day, week, month
-  const [events, setEvents] = useState([])
+  const [view, setView] = useState('month')
+  const [googleEvents, setGoogleEvents] = useState([])
+  const [loadingEvents, setLoadingEvents] = useState(false)
   const [selectedDateEvents, setSelectedDateEvents] = useState([])
+  const [events, setEvents] = useState([])
   
-  // Mock calendar events - will be replaced with Google Calendar data
+  // Mock calendar events - fallback when Google Calendar is not synced
   const mockEvents = [
     {
       id: 1,
@@ -51,14 +56,91 @@ function CalendarContent() {
   ]
 
   useEffect(() => {
-    // Initialize with mock events for now
+    if (user?.id) {
+      loadCalendarEvents()
+      checkGoogleSyncStatus()
+    }
+    // Initialize with mock events for fallback
     setEvents(mockEvents)
     fetchEventsForSelectedDate()
-  }, [])
+  }, [user?.id])
 
   useEffect(() => {
     fetchEventsForSelectedDate()
   }, [selectedDate])
+
+  const checkGoogleSyncStatus = async () => {
+    try {
+      const res = await fetch(`/api/get-calendar-events?user_id=${user.id}`)
+      const data = await res.json()
+      setIsGoogleSynced(!data.needsAuth)
+    } catch (err) {
+      console.error('Error checking sync status:', err)
+    }
+  }
+
+  const handleSync = async () => {
+    setLoading(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/simple-calendar-sync?user_id=' + user.id, {
+        method: 'POST'
+      })
+      const data = await res.json()
+      
+      if (data.needsAuth) {
+        setMessage('Redirecting to Google authentication...')
+        const authRes = await fetch(`/api/simple-calendar-auth?user_id=${user.id}`)
+        const authData = await authRes.json()
+        
+        if (authData.success && authData.authUrl) {
+          window.location.href = authData.authUrl
+        } else {
+          setMessage('Error getting authentication URL')
+        }
+        return
+      }
+      
+      setMessage(data.message || 'Synced!')
+      setIsGoogleSynced(true)
+      loadCalendarEvents()
+    } catch (err) {
+      console.error('Sync error:', err)
+      setMessage('Failed to sync tasks.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadCalendarEvents = async () => {
+    setLoadingEvents(true)
+    try {
+      const res = await fetch(`/api/get-calendar-events?user_id=${user.id}`)
+      const data = await res.json()
+      
+      if (data.needsAuth) {
+        setGoogleEvents([])
+        return
+      }
+      
+      if (data.success) {
+        setGoogleEvents(data.events || [])
+      } else {
+        console.error('Failed to load calendar events:', data.message)
+      }
+    } catch (err) {
+      console.error('Error loading events:', err)
+    } finally {
+      setLoadingEvents(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    const { error } = await signOut()
+    if (!error) {
+      router.push('/login')
+    }
+  }
 
   const formatDate = (date) => {
     return date.toLocaleDateString('en-US', {
@@ -78,22 +160,22 @@ function CalendarContent() {
 
   const fetchEventsForSelectedDate = async () => {
     try {
-      const formattedDate = formatDateToAPI(selectedDate);
-      const response = await fetch(`/api/get-tasks/${formattedDate}`);
+      const formattedDate = formatDateToAPI(selectedDate)
+      const response = await fetch(`/api/get-tasks/${formattedDate}`)
       
       if (!response.ok) {
-        throw new Error('Failed to fetch tasks');
+        throw new Error('Failed to fetch tasks')
       }
       
-      const data = await response.json();
-      console.log("DATA: ", data);
+      const data = await response.json()
+      console.log("DATA: ", data)
       // Ensure we always set an array, even if the response is null/undefined
-      setSelectedDateEvents(Array.isArray(data.data) ? data.data : []);
+      setSelectedDateEvents(Array.isArray(data.data) ? data.data : [])
     } catch (error) {
-      console.error('Error fetching events:', error);
-      setSelectedDateEvents([]); // Explicitly set empty array on error
+      console.error('Error fetching events:', error)
+      setSelectedDateEvents([]) // Explicitly set empty array on error
     }
-  };
+  }
 
   const handleDayClick = (day) => {
     const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
@@ -118,12 +200,10 @@ function CalendarContent() {
 
     const days = []
     
-    // Add empty cells for days before the first day of the month
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null)
     }
     
-    // Add days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       days.push(day)
     }
@@ -149,14 +229,37 @@ function CalendarContent() {
 
   const getEventsForDay = (day, month = currentDate.getMonth(), year = currentDate.getFullYear()) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    
+    // If Google Calendar is synced, show Google events
+    if (isGoogleSynced && googleEvents.length > 0) {
+      const googleEventsForDay = googleEvents.filter(event => {
+        const eventDate = new Date(event.start)
+        const eventDateStr = eventDate.toISOString().split('T')[0]
+        return eventDateStr === dateStr
+      }).map(event => ({
+        ...event,
+        time: event.isAllDay ? 'All day' : new Date(event.start).toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit' 
+        }),
+        color: event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500' 
+      }))
+      
+      return googleEventsForDay
+    }
+    
+    // Fallback to mock events
     return events.filter(event => event.date === dateStr)
   }
 
-  const handleLogout = async () => {
-    const { error } = await signOut()
-    if (!error) {
-      router.push('/login')
-    }
+  const formatEventTime = (dateStr) => {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
   return (
@@ -227,30 +330,45 @@ function CalendarContent() {
           </div>
         </div>
 
-        {/* Calendar Grid */}
-        <div className="bg-white rounded-3xl shadow-xl p-6">
-          {/* Google Calendar Integration Notice */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center gap-3">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <h3 className="font-semibold text-blue-800">Google Calendar Integration Coming Soon</h3>
-                <p className="text-blue-600 text-sm">Evin is working on syncing your Google Calendar events with Trackademic.</p>
+        {/* Google Calendar Sync */}
+        {!isGoogleSynced && (
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
+                </svg>
+                <div>
+                  <h3 className="font-semibold text-blue-800">Sync with Google Calendar</h3>
+                  <p className="text-blue-600 text-sm">Connect your Google Calendar to sync your tasks and events.</p>
+                </div>
               </div>
+              <button
+                onClick={handleSync}
+                disabled={loading}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Syncing...' : 'Sync Now'}
+              </button>
             </div>
+            {message && (
+              <p className="mt-2 text-sm text-blue-700 font-medium">
+                {message}
+              </p>
+            )}
           </div>
+        )}
 
+        <div className="bg-white rounded-3xl shadow-xl p-6">
           {/* Days of week header */}
           {view !== 'day' && (
-          <div className="grid grid-cols-7 gap-1 mb-2">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-              <div key={day} className="p-2 text-center font-semibold text-gray-700 bg-gray-50 rounded-lg">
-                {day}
-              </div>
-            ))}
-          </div>
+            <div className="grid grid-cols-7 gap-1 mb-2">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                <div key={day} className="p-2 text-center font-semibold text-gray-700 bg-gray-50 rounded-lg">
+                  {day}
+                </div>
+              ))}
+            </div>
           )}
           
           {/* Calendar View */}
@@ -278,11 +396,7 @@ function CalendarContent() {
                         {day}
                       </div>
                       <div className="space-y-1">
-                        {getEventsForDay(
-    day,
-    currentDate.getMonth(),
-    currentDate.getFullYear()
-  ).map((event) => (
+                        {getEventsForDay(day, currentDate.getMonth(), currentDate.getFullYear()).map((event) => (
                           <div
                             key={event.id}
                             className={`${event.color} text-white text-xs p-1 rounded truncate`}
@@ -328,11 +442,7 @@ function CalendarContent() {
                       {day}
                     </div>
                     <div className="space-y-1">
-                      {getEventsForDay(
-    day,
-    currentDate.getMonth(),
-    currentDate.getFullYear()
-  ).map(event => (
+                      {getEventsForDay(day, currentDate.getMonth(), currentDate.getFullYear()).map(event => (
                         <div
                           key={event.id}
                           className={`${event.color} text-white text-xs p-1 rounded truncate`}
@@ -348,77 +458,101 @@ function CalendarContent() {
             </div>
           )}
 
-{view === 'day' && (
-  <div className="w-full">
-    <div
-      onClick={() => handleDayClick(selectedDate.getDate())}
-      className={`w-full min-h-[300px] p-4 border border-gray-100 rounded-lg cursor-pointer bg-white hover:bg-gray-50 ${
-        isSelected(selectedDate.getDate()) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
-      }`}
-    >
-      <div className={`text-lg font-bold mb-2 ${
-        isSelected(selectedDate.getDate()) ? 'text-indigo-600' : 'text-gray-900'
-      }`}>
-        {formatDate(selectedDate)}
-      </div>
-      {getEventsForDay(
-            selectedDate.getDate(),
-            selectedDate.getMonth(),
-            selectedDate.getFullYear()
-          ).length === 0 ? (
-        <p className="text-gray-500 text-sm">No events for this day.</p>
-      ) : (
-        <div className="space-y-2">
-          {getEventsForDay(
-            selectedDate.getDate(),
-            selectedDate.getMonth(),
-            selectedDate.getFullYear()
-          ).map(event => (
-            <div
-              key={event.id}
-              className={`${event.color} text-white text-xs p-2 rounded`}
-            >
-              <div className="font-medium">{event.time}</div>
-              <div>{event.title}</div>
+          {view === 'day' && (
+            <div className="w-full">
+              <div
+                onClick={() => handleDayClick(selectedDate.getDate())}
+                className={`w-full min-h-[300px] p-4 border border-gray-100 rounded-lg cursor-pointer bg-white hover:bg-gray-50 ${
+                  isSelected(selectedDate.getDate()) ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''
+                }`}
+              >
+                <div className={`text-lg font-bold mb-2 ${
+                  isSelected(selectedDate.getDate()) ? 'text-indigo-600' : 'text-gray-900'
+                }`}>
+                  {formatDate(selectedDate)}
+                </div>
+                {getEventsForDay(selectedDate.getDate(), selectedDate.getMonth(), selectedDate.getFullYear()).length === 0 ? (
+                  <p className="text-gray-500 text-sm">No events for this day.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {getEventsForDay(selectedDate.getDate(), selectedDate.getMonth(), selectedDate.getFullYear()).map(event => (
+                      <div
+                        key={event.id}
+                        className={`${event.color} text-white text-xs p-2 rounded`}
+                      >
+                        <div className="font-medium">{event.time}</div>
+                        <div>{event.title}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          ))}
-        </div>
-      )}
-    </div>
-  </div>
-)}
+          )}
         </div>
 
-        {/* Upcoming Events Sidebar - Now shows events for selected date */}
+        {/* Events Sidebar */}
         <div className="mt-6 bg-white rounded-3xl shadow-xl p-6">
-  <h3 className="text-xl font-bold text-indigo-600 mb-4">
-    Tasks for {formatDate(selectedDate)}
-  </h3>
-  {selectedDateEvents.length === 0 ? (
-    <p className="text-gray-500">No tasks for the selected date.</p>
-  ) : (
-    <div className="space-y-3">
-      {selectedDateEvents.map((event) => (
-        <div key={event.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-          <div className={`w-3 h-3 rounded-full ${event.color || 'bg-blue-500'}`}></div>
-          <div className="flex-1">
-            <div className="font-medium text-gray-900">{event.title}</div>
-            <div className="text-sm text-gray-600">
-              {event.date} at {event.time || 'All day'}
-            </div>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold text-indigo-600">
+              {isGoogleSynced && googleEvents.length > 0 ? 'Upcoming Events' : `Tasks for ${formatDate(selectedDate)}`}
+            </h3>
+            {loadingEvents && (
+              <div className="text-sm text-gray-500">Loading...</div>
+            )}
           </div>
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-            event.type === 'class' ? 'bg-blue-100 text-blue-800' :
-            event.type === 'assignment' ? 'bg-red-100 text-red-800' :
-            'bg-green-100 text-green-800'
-          }`}>
-            {event.type}
-          </span>
+          
+          <div className="space-y-3">
+            {/* Google Calendar Events */}
+            {isGoogleSynced && googleEvents.length > 0 ? (
+              googleEvents.slice(0, 5).map((event) => (
+                <div key={event.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                  <div className={`w-3 h-3 rounded-full ${
+                    event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500'
+                  }`}></div>
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">{event.title}</div>
+                    <div className="text-sm text-gray-600">
+                      {formatEventTime(event.start)}
+                      {event.location && <span> • {event.location}</span>}
+                    </div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    event.title.startsWith('📚') ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {event.isGoogleEvent ? 'Google' : 'Local'}
+                  </span>
+                </div>
+              ))
+            ) : selectedDateEvents.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
+                </svg>
+                <p className="text-sm font-medium">No tasks for the selected date</p>
+              </div>
+            ) : (
+              selectedDateEvents.map((event) => (
+                <div key={event.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                  <div className={`w-3 h-3 rounded-full ${event.color || 'bg-blue-500'}`}></div>
+                  <div className="flex-1">
+                    <div className="font-medium text-gray-900">{event.title}</div>
+                    <div className="text-sm text-gray-600">
+                      {event.date} at {event.time || 'All day'}
+                    </div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    event.type === 'class' ? 'bg-blue-100 text-blue-800' :
+                    event.type === 'assignment' ? 'bg-red-100 text-red-800' :
+                    'bg-green-100 text-green-800'
+                  }`}>
+                    {event.type}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
-      ))}
-    </div>
-  )}
-</div>
       </div>
     </div>
   )
