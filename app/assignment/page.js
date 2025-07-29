@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
+import { Edit, Trash2 } from 'lucide-react'
 
 function AssignmentContent() {
   const { user, signOut } = useAuth()
@@ -15,6 +16,7 @@ function AssignmentContent() {
   const [uploadLoading, setUploadLoading] = useState(false)
   const [error, setError] = useState('')
   const [isEditing, setIsEditing] = useState(false)
+  const [editingAssignment, setEditingAssignment] = useState(null)
   const [uploadError, setUploadError] = useState('')
   const [selectedFile, setSelectedFile] = useState(null)
   const [aiResults, setAiResults] = useState(null)
@@ -119,12 +121,14 @@ function AssignmentContent() {
         title: task.title,
         description: task.description,
         due_date: task.due_date,
+        class_id: task.class_id, // Add the missing class_id
         class_name: task.class_name || '', // fallback if not included
-        priority: task.priority
+        priority: task.priority,
+        estimated_hours: task.estimated_time || 1 // Also add estimated_hours for consistency
       }))
     
       setAssignments(tasks)
-  }
+    }
   }
 
   const handleFileUpload = async () => {
@@ -247,8 +251,8 @@ function AssignmentContent() {
   }
 
   const handleAddAssignment = async () => {
-    if (!newAssignment.title || !newAssignment.due_date || !newAssignment.class_id) {
-      setError('Please fill in all required fields');
+    if (!newAssignment.title || !newAssignment.due_date) {
+      setError('Please fill in title and due date');
       return;
     }
   
@@ -256,28 +260,42 @@ function AssignmentContent() {
     setError('');
   
     try {
-      const endpoint = isEditing ? `/api/edit-task/${id}` : '/api/add-task';
+      const endpoint = isEditing ? `/api/edit-task/${editingAssignment.id}` : '/api/add-task';
       const method = isEditing ? 'PATCH' : 'POST';
+
+      const requestData = {
+        title: newAssignment.title,
+        description: newAssignment.description,
+        due_date: newAssignment.due_date,
+        class_id: newAssignment.class_id,
+        priority: newAssignment.priority,
+        estimated_time: newAssignment.estimated_hours,
+        type: 'assignment',
+        status: 'pending',
+        user_id: user?.id,
+      };
+
+      console.log('Assignment update request:', {
+        endpoint,
+        method,
+        isEditing,
+        editingAssignment,
+        requestData
+      });
   
       const response = await fetch(endpoint, {
         method,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          title: newAssignment.title,
-          description: newAssignment.description,
-          due_date: newAssignment.due_date,
-          class_id: newAssignment.class_id,
-          priority: newAssignment.priority,
-          estimated_time: newAssignment.estimated_hours,
-          type: 'assignment',
-          status: 'pending',
-          user_id: user?.id,
-        }),
+        body: JSON.stringify(requestData),
       });
+
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
   
       const data = await response.json();
+      console.log('Response data:', data);
   
       if (response.ok) {
         // Reset form and close modal
@@ -291,11 +309,13 @@ function AssignmentContent() {
         });
         setShowModal(false);
         setIsEditing(false);
+        setEditingAssignment(null);
         loadAssignments(); // Refresh the list
       } else {
         setError(data.error?.message || 'Failed to save assignment');
       }
     } catch (err) {
+      console.error('Network error details:', err);
       setError('Network error. Please try again.');
     } finally {
       setLoading(false);
@@ -384,42 +404,31 @@ function AssignmentContent() {
                     <span>Due: {formatDate(assignment.due_date)}</span>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-1">
                 <button
-                  className="text-indigo-600 hover:text-indigo-800 px-3 py-1 rounded-lg hover:bg-indigo-50"
+                  className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
+                  title="Edit assignment"
                   onClick={() => {
+                    console.log('Edit assignment data:', assignment);
+                    setEditingAssignment(assignment)
                     setNewAssignment({
                       title: assignment.title || '',
                       description: assignment.description || '',
                       due_date: assignment.due_date?.slice(0, 16) || '', // trims to "YYYY-MM-DDTHH:MM"
-                      class_id: assignment.class_id || '',
+                      class_id: assignment.class_id ? String(assignment.class_id) : '',
                       priority: assignment.priority || 'medium',
                       estimated_hours: assignment.estimated_hours || 1
                     });
+                    console.log('Setting newAssignment with class_id:', assignment.class_id ? String(assignment.class_id) : '');
                     setIsEditing(true)
                     setShowModal(true)
                   }}
-                  // onClick={async () => {
-                  //   console.log("About to edit something");
-                  //   try {
-                  //     const res = await fetch(`/api/edit-task/${id}`, {
-                  //       method: 'PATCH',
-                  //       headers: { 'Content-Type': 'application/json' },
-                  //       body: JSON.stringify(updatedFields),
-                  //     })
-                  
-                  //     if (!res.ok) throw new Error('Update failed')
-                  //     const data = await res.json()
-                  //     console.log("Updated:", data)
-                  //   } catch (err) {
-                  //     console.error(err)
-                  //   }
-                  // }}
                 >
-                  Edit
+                  <Edit className="w-4 h-4" />
                 </button>
                 <button
-                  className="text-red-600 hover:text-red-800 px-3 py-1 rounded-lg hover:bg-red-50"
+                  className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
+                  title="Delete assignment"
                   onClick={async () => {
                     console.log("About to delete something");
                     try {
@@ -433,7 +442,7 @@ function AssignmentContent() {
                     }
                   }}
                 >
-                  Delete
+                  <Trash2 className="w-4 h-4" />
                 </button>
                 </div>
               </div>
@@ -500,14 +509,14 @@ function AssignmentContent() {
               {/* Class Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Class *
+                  Class
                 </label>
                 <select
                   value={newAssignment.class_id}
                   onChange={(e) => setNewAssignment({ ...newAssignment, class_id: e.target.value })}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
                 >
-                  <option value="">Select a class</option>
+                  <option value="">No class (general assignment)</option>
                                      {classes.map((cls) => (
                      <option key={cls.id} value={cls.id}>
                        {cls.code ? `${cls.code} - ${cls.name}` : cls.name}
@@ -568,6 +577,7 @@ function AssignmentContent() {
                 onClick={() => {
                   setShowModal(false)
                   setIsEditing(false)
+                  setEditingAssignment(null)
                   setError('')
                   setNewAssignment({
                     title: '',
