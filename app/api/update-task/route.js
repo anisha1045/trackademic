@@ -27,10 +27,10 @@ export async function PUT(request) {
       }
     )
 
-    // Get the current user
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    // Get the current user (secure method)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    if (sessionError || !session) {
+    if (userError || !user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -70,7 +70,7 @@ export async function PUT(request) {
       .from('Tasks')
       .update(updateData)
       .eq('id', id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .select()
 
     if (error) {

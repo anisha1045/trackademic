@@ -28,9 +28,9 @@ export async function DELETE(request) {
     )
 
     // Get the current user
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    if (sessionError || !session) {
+    if (userError || !user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -49,7 +49,7 @@ export async function DELETE(request) {
       .from('Tasks')
       .delete()
       .eq('id', id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
 
     if (error) {
       console.error('Database error:', error)

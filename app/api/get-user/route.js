@@ -28,9 +28,9 @@ export async function GET() {
     )
 
     // Get the current user session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    if (sessionError || !session) {
+    if (userError || !user) {
       console.error("Authentication error:", sessionError)
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -39,7 +39,7 @@ export async function GET() {
     const { data: tasks, error } = await supabase
       .from('User Info')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
 
     if (error) {
       console.error('Database error:', error)

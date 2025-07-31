@@ -406,11 +406,11 @@ export async function POST(req) {
         }
       )
       
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
       
-      if (session && session.user.email) {
+      if (user && user.email) {
         const notificationResult = await gmailService.sendScheduleNotification(
-          session.user.email,
+          user.email,
           parsedData.assignments
         )
         

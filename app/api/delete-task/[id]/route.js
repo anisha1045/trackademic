@@ -24,22 +24,23 @@ export async function DELETE(req, { params }) {
       }
     )
 
-    // Get current user session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    // Get current user (secure method)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-    if (sessionError || !session) {
-      console.error("Authentication error:", sessionError)
+    if (userError || !user) {
+      console.error("Authentication error:", userError)
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    console.log("Authenticated user session:", session)
+    console.log("Authenticated user:", user)
     console.log("Attempting to delete task with ID:", id)
 
-    // Delete the task
+    // Delete the task (only if owned by user for security)
     const { data, error } = await supabase
       .from('Tasks')
       .delete()
       .eq('id', id)
+      .eq('user_id', user.id)
 
     if (error) {
       console.error("Supabase delete error:", error)

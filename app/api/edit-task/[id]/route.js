@@ -20,8 +20,8 @@ export async function PATCH(req, { params }) {
       }
     )
 
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    if (sessionError || !session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (userError || !user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
     // Validate required fields
     if (!id || !body.title) {
@@ -52,7 +52,7 @@ export async function PATCH(req, { params }) {
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .eq('user_id', session.user.id)  // CRITICAL: Filter by user_id for security
+      .eq('user_id', user.id)  // CRITICAL: Filter by user_id for security
       .select()
 
     if (error) {

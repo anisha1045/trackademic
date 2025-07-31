@@ -14,6 +14,7 @@ function AssignmentContent() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [uploadLoading, setUploadLoading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState('')
   const [error, setError] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [editingAssignment, setEditingAssignment] = useState(null)
@@ -212,8 +213,15 @@ function AssignmentContent() {
 
     setUploadLoading(true)
     setUploadError('')
+    setUploadProgress('Preparing file for upload...')
 
     try {
+      // Small delay to show initial step
+      await new Promise(resolve => setTimeout(resolve, 800))
+      
+      // Show progress update
+      setUploadProgress('Uploading syllabus to server...')
+      
       const formData = new FormData()
       formData.append('file', selectedFile)
 
@@ -222,11 +230,17 @@ function AssignmentContent() {
         body: formData,
       })
 
+      // Update progress during processing
+      setUploadProgress('Analyzing syllabus with AI...')
+
       const data = await response.json()
 
       if (response.ok) {
-        setAiResults(data)
-        setUploadError('')
+        setUploadProgress('Processing complete!')
+        setTimeout(() => {
+          setAiResults(data)
+          setUploadError('')
+        }, 500) // Small delay to show completion
       } else {
         setUploadError(data.error || 'Failed to parse file')
       }
@@ -234,6 +248,7 @@ function AssignmentContent() {
       setUploadError('Network error. Please try again.')
     } finally {
       setUploadLoading(false)
+      setUploadProgress('')
     }
   }
 
@@ -754,7 +769,36 @@ function AssignmentContent() {
       {/* Upload Syllabus Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto relative">
+            {/* Loading Overlay */}
+            {uploadLoading && (
+              <div className="absolute inset-0 bg-white bg-opacity-95 rounded-xl flex items-center justify-center z-10">
+                <div className="text-center">
+                  {/* Animated Spinner */}
+                  <div className="relative mb-6">
+                    <div className="w-16 h-16 border-4 border-indigo-200 rounded-full animate-spin border-t-indigo-600 mx-auto"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-8 h-8 bg-indigo-100 rounded-full animate-pulse"></div>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Text */}
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-indigo-600">Processing Syllabus</h3>
+                    <p className="text-gray-600 font-medium">{uploadProgress}</p>
+                    
+                    {/* Progress Steps */}
+                    <div className="flex justify-center space-x-2 mt-4">
+                      <div className={`w-2 h-2 rounded-full ${uploadProgress.includes('Preparing') ? 'bg-indigo-600 animate-bounce' : 'bg-indigo-200'}`}></div>
+                      <div className={`w-2 h-2 rounded-full ${uploadProgress.includes('Uploading') ? 'bg-indigo-600 animate-bounce' : 'bg-indigo-200'}`} style={{ animationDelay: '0.1s' }}></div>
+                      <div className={`w-2 h-2 rounded-full ${uploadProgress.includes('Analyzing') ? 'bg-indigo-600 animate-bounce' : 'bg-indigo-200'}`} style={{ animationDelay: '0.2s' }}></div>
+                      <div className={`w-2 h-2 rounded-full ${uploadProgress.includes('complete') ? 'bg-green-600 animate-bounce' : 'bg-indigo-200'}`} style={{ animationDelay: '0.3s' }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <h2 className="text-2xl font-bold text-indigo-600 mb-6">Upload Syllabus</h2>
             
             <div className="space-y-4">
@@ -802,17 +846,25 @@ function AssignmentContent() {
                     setShowUploadModal(false)
                     setSelectedFile(null)
                     setUploadError('')
+                    setUploadProgress('')
                   }}
-                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+                  disabled={uploadLoading}
+                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleFileUpload}
                   disabled={!selectedFile || uploadLoading}
-                  className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  {uploadLoading ? 'Uploading...' : 'Upload'}
+                  {uploadLoading && (
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  )}
+                  {uploadLoading ? 'Processing...' : 'Upload & Analyze'}
                 </button>
               </div>
             </div>
