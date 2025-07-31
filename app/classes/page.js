@@ -21,6 +21,9 @@ function ClassesContent() {
     semester: '',
     color: '#6366f1'
   })
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [classToDelete, setClassToDelete] = useState(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
   const router = useRouter()
 
   const handleLogout = async () => {
@@ -125,24 +128,39 @@ function ClassesContent() {
 
 
 
-  const handleDelete = async (classId) => {
-    if (!confirm('Are you sure you want to delete this class? This will also remove all associated assignments.')) {
-      return
-    }
+  const handleDelete = (classItem) => {
+    setClassToDelete(classItem)
+    setShowDeleteModal(true)
+  }
 
+  const confirmDeleteClass = async () => {
+    if (!classToDelete) return
+
+    setDeleteLoading(true)
     try {
-      const response = await fetch(`/api/delete-class/${classId}`, {
+      const response = await fetch(`/api/delete-class/${classToDelete.id}`, {
         method: 'DELETE',
       })
 
       if (response.ok) {
         loadClasses()
+        setShowDeleteModal(false)
+        setClassToDelete(null)
       } else {
-        alert('Failed to delete class')
+        console.error('Failed to delete class')
+        // Could add a toast notification here instead of alert
       }
     } catch (err) {
-      alert('Error deleting class')
+      console.error('Error deleting class:', err)
+      // Could add a toast notification here instead of alert
+    } finally {
+      setDeleteLoading(false)
     }
+  }
+
+  const cancelDeleteClass = () => {
+    setShowDeleteModal(false)
+    setClassToDelete(null)
   }
 
   const resetForm = () => {
@@ -214,7 +232,7 @@ function ClassesContent() {
                     <Edit className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => handleDelete(classItem.id)}
+                    onClick={() => handleDelete(classItem)}
                     className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
                     title="Delete class"
                   >
@@ -392,6 +410,53 @@ function ClassesContent() {
                   </svg>
                 )}
                 {loading ? (editingClass ? 'Updating...' : 'Adding...') : (editingClass ? 'Update Class' : 'Add Class')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Class Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Delete Class</h3>
+                <p className="text-sm text-gray-500">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <p className="text-gray-700 mb-6">
+              Are you sure you want to delete <span className="font-medium">"{classToDelete?.name}"</span>? 
+              This will also remove all associated assignments and cannot be undone.
+            </p>
+            
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={cancelDeleteClass}
+                disabled={deleteLoading}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteClass}
+                disabled={deleteLoading}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {deleteLoading && (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {deleteLoading ? 'Deleting...' : 'Delete Class'}
               </button>
             </div>
           </div>
