@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
-import { Edit, Trash2 } from 'lucide-react'
+import { Edit, Trash2, Undo2, Check } from 'lucide-react'
 
 function AssignmentContent() {
   const { user, signOut } = useAuth()
@@ -37,6 +37,30 @@ function AssignmentContent() {
     const { error } = await signOut()
     if (!error) {
       router.push('/login')
+    }
+  }
+
+  const handleMarkDone = async (taskId, currentDoneStatus) => {
+    try {
+      const response = await fetch('/api/update-task', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: taskId,
+          done: !currentDoneStatus
+        }),
+      })
+
+      if (response.ok) {
+        // Reload assignments to reflect the updated done status
+        loadAssignments()
+      } else {
+        console.error('Failed to update assignment done status')
+      }
+    } catch (error) {
+      console.error('Error updating assignment done status:', error)
     }
   }
 
@@ -110,7 +134,8 @@ function AssignmentContent() {
           class_id: task.class_id,
           class_name: task.class_name || '',
           priority: task.priority || 'medium',
-          estimated_hours: task.estimated_time || 1
+          estimated_hours: task.estimated_time || 1,
+          done: task.done || false
         }))
         setAssignments(tasks)
       } else {
@@ -485,11 +510,13 @@ function AssignmentContent() {
         {/* Assignments Grid */}
         <div className="grid gap-4">
           {assignments.map((assignment) => (
-            <div key={assignment.id} className="bg-white rounded-3xl shadow-xl p-6 hover:shadow-2xl transition-shadow">
+            <div key={assignment.id} className={`rounded-3xl shadow-xl p-6 hover:shadow-2xl transition-shadow ${
+              assignment.done ? 'bg-green-100 border border-green-200' : 'bg-white'
+            }`}>
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-xl font-semibold text-gray-800">{assignment.title}</h3>
+                    <h3 className={`text-xl font-semibold text-gray-800 ${assignment.done ? 'line-through text-gray-500' : ''}`}>{assignment.title}</h3>
                     <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getPriorityColor(assignment.priority)}`}>
                       {assignment.priority}
                     </span>
@@ -503,6 +530,21 @@ function AssignmentContent() {
                   </div>
                 </div>
                 <div className="flex gap-1">
+                  <button
+                    onClick={() => handleMarkDone(assignment.id, assignment.done)}
+                    className={`p-1 rounded-md transition-colors ${
+                      assignment.done 
+                        ? 'text-gray-600 hover:text-gray-800 hover:bg-gray-50' 
+                        : 'text-green-600 hover:text-green-800 hover:bg-green-50'
+                    }`}
+                    title={assignment.done ? 'Mark as undone' : 'Mark as done'}
+                  >
+                    {assignment.done ? (
+                      <Undo2 className="w-4 h-4" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                  </button>
                   <button
                     className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
                     title="Edit assignment"

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
-import { Edit, Trash2 } from 'lucide-react'
+import { Edit, Trash2, Undo2, Check } from 'lucide-react'
 
 function DashboardContent() {
   const { user, signOut } = useAuth()
@@ -12,7 +12,7 @@ function DashboardContent() {
 
   // No default schedule items - only show real tasks and calendar events
 
-  const [completedSchedule, setCompletedSchedule] = useState([])
+
   const [tasks, setTasks] = useState([])
   const [calendarEvents, setCalendarEvents] = useState([])
   const [showModal, setShowModal] = useState(false)
@@ -136,7 +136,6 @@ function DashboardContent() {
         
         setCalendarEvents(formattedEvents || [])
       } else {
-        console.error('Failed to load calendar events:', data.error || 'Unknown error')
         if (data.needsAuth) {
           console.log('Google calendar authentication required')
         }
@@ -157,8 +156,28 @@ function DashboardContent() {
     }
   }
 
-  const handleMarkDone = (item) => {
-    setCompletedSchedule((prev) => [...prev, item])
+  const handleMarkDone = async (taskId, currentDoneStatus) => {
+    try {
+      const response = await fetch('/api/update-task', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: taskId,
+          done: !currentDoneStatus
+        }),
+      })
+
+      if (response.ok) {
+        // Reload tasks to reflect the updated done status
+        loadTasks()
+      } else {
+        console.error('Failed to update task done status')
+      }
+    } catch (error) {
+      console.error('Error updating task done status:', error)
+    }
   }
 
   const formatTime = (isoString) => {
@@ -203,11 +222,12 @@ function DashboardContent() {
         ? `${new Date(item.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title} ${item.location ? `(${item.location})` : ''}`
         : `${new Date(item.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title}`,
       isTask: !item.isCalendarEvent,
-      isCalendarEvent: item.isCalendarEvent
+      isCalendarEvent: item.isCalendarEvent,
+      done: item.done || false // Add done status from database
     }))
   }, [itemsForToday])
 
-  const dailyProgress = scheduleItems.length > 0 ? Math.round((completedSchedule.length / scheduleItems.length) * 100) : 0
+  const dailyProgress = scheduleItems.length > 0 ? Math.round((scheduleItems.filter(item => item.done).length / scheduleItems.length) * 100) : 0
   const radius = 45
   const circumference = 2 * Math.PI * radius
   const offset = circumference * (1 - dailyProgress / 100)
@@ -469,7 +489,7 @@ function DashboardContent() {
               </div>
             ) : (
               scheduleItems.map((item, idx) => {
-                const isDone = completedSchedule.includes(item.text)
+                const isDone = item.done
                 return (
                   <div
                     key={item.id}
@@ -477,13 +497,17 @@ function DashboardContent() {
                       isDone ? 'bg-green-100 border-green-200' : 'bg-indigo-50 border-indigo-100'
                     }`}
                   >
-                    <span>{item.text}</span>
-                    {!isDone && (
+                    <span className={isDone ? 'line-through text-gray-500' : ''}>{item.text}</span>
+                    {item.isTask && (
                       <button
-                        onClick={() => handleMarkDone(item.text)}
-                        className="bg-green-700 hover:bg-green-800 text-white text-sm px-3 py-1 rounded-lg"
+                        onClick={() => handleMarkDone(item.id, item.done)}
+                        className={`text-white text-sm px-3 py-1 rounded-lg transition-colors ${
+                          isDone 
+                            ? 'bg-gray-500 hover:bg-gray-600' 
+                            : 'bg-green-700 hover:bg-green-800'
+                        }`}
                       >
-                        ✔ Done
+                        {isDone ? '↶ Undo' : '✔ Done'}
                       </button>
                     )}
                   </div>
@@ -554,12 +578,13 @@ function DashboardContent() {
                 ) : (
                   allItems.map((item) => (
                     <div key={item.id} className={`rounded-xl p-4 shadow relative group ${
-                      item.isCalendarEvent ? 'bg-green-50 border border-green-200' : 'bg-indigo-50'
+                      item.isCalendarEvent ? 'bg-green-50 border border-green-200' : 
+                      item.done ? 'bg-green-100 border border-green-200' : 'bg-indigo-50'
                     }`}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-semibold text-lg text-gray-900">{item.title}</h3>
+                            <h3 className={`font-semibold text-lg text-gray-900 ${item.done ? 'line-through text-gray-500' : ''}`}>{item.title}</h3>
                             {item.isCalendarEvent && (
                               <div className="flex items-center gap-1">
                                 <svg className="w-4 h-4 text-green-600" viewBox="0 0 24 24" fill="currentColor">
@@ -603,6 +628,21 @@ function DashboardContent() {
                         </div>
                         {!item.isCalendarEvent && (
                           <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                            <button
+                              onClick={() => handleMarkDone(item.id, item.done)}
+                              className={`p-1 rounded-md transition-colors ${
+                                item.done 
+                                  ? 'text-gray-600 hover:text-gray-800 hover:bg-gray-50' 
+                                  : 'text-green-600 hover:text-green-800 hover:bg-green-50'
+                              }`}
+                              title={item.done ? 'Mark as undone' : 'Mark as done'}
+                            >
+                              {item.done ? (
+                                <Undo2 className="w-4 h-4" />
+                              ) : (
+                                <Check className="w-4 h-4" />
+                              )}
+                            </button>
                             <button
                               onClick={() => handleEditTask(item)}
                               className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
