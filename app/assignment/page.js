@@ -22,6 +22,7 @@ function AssignmentContent() {
   const [aiResults, setAiResults] = useState(null)
   const [dragActive, setDragActive] = useState(false)
   const [syncStatus, setSyncStatus] = useState(null)
+  const [selectedClassForAll, setSelectedClassForAll] = useState('')
   const [newAssignment, setNewAssignment] = useState({
     title: '',
     description: '',
@@ -263,7 +264,32 @@ function AssignmentContent() {
     // Reset state and close modal
     setAiResults(null)
     setSelectedFile(null)
+    setSelectedClassForAll('')
     setShowUploadModal(false)
+  }
+
+  const handleAddAllToSelectedClass = async () => {
+    if (!aiResults?.assignments) return
+
+    if (selectedClassForAll) {
+      // Add to selected class
+      await handleAddAllAiAssignments(selectedClassForAll)
+    } else {
+      // No class selected - add as general assignments (not tied to any class)
+      let successCount = 0
+      for (const assignment of aiResults.assignments) {
+        const success = await handleAddAiAssignment(assignment, null) // null = general assignment
+        if (success) successCount++
+      }
+
+      alert(`Added ${successCount} of ${aiResults.assignments.length} assignments as general assignments`)
+      
+      // Reset state and close modal
+      setAiResults(null)
+      setSelectedFile(null)
+      setSelectedClassForAll('')
+      setShowUploadModal(false)
+    }
   }
 
   // Drag and drop handlers
@@ -760,25 +786,56 @@ function AssignmentContent() {
             
             {aiResults.assignments && aiResults.assignments.length > 0 && (
               <div className="space-y-4">
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Class for All Assignments
-                  </label>
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleAddAllAiAssignments(e.target.value)
-                      }
-                    }}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
-                  >
-                    <option value="">Select a class to add all assignments</option>
-                    {classes.map((cls) => (
-                      <option key={cls.id} value={cls.id}>
-                        {cls.code ? `${cls.code} - ${cls.name}` : cls.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-3 mb-3">
+                    <h3 className="text-lg font-semibold text-blue-900">
+                      Quick Add All Assignments
+                    </h3>
+                    <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
+                      {aiResults.assignments.length} found
+                    </span>
+                  </div>
+                  
+                  <div className="flex gap-3 items-end">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Select Class (optional)
+                      </label>
+                      <select
+                        value={selectedClassForAll}
+                        onChange={(e) => setSelectedClassForAll(e.target.value)}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
+                      >
+                        <option value="">Leave blank for general assignments, or choose a specific class</option>
+                        {classes.map((cls) => (
+                          <option key={cls.id} value={cls.id}>
+                            {cls.code ? `${cls.code} - ${cls.name}` : cls.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <button
+                      onClick={handleAddAllToSelectedClass}
+                      disabled={loading}
+                      className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      {loading ? 'Adding...' : selectedClassForAll ? 'Add All to Class' : 'Add as General Assignments'}
+                    </button>
+                  </div>
+                  
+                  <p className="text-xs text-gray-600 mt-2">
+                    {selectedClassForAll 
+                      ? `Will add all assignments to the selected class` 
+                      : `Will add all assignments as general assignments (not tied to any specific class)`
+                    }
+                  </p>
+                </div>
+
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">
+                    Or add assignments individually:
+                  </h4>
                 </div>
 
                 <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -795,14 +852,14 @@ function AssignmentContent() {
                         <span>Due: {assignment.due_date}</span>
                         <span>{assignment.estimated_hours}h estimated</span>
                       </div>
-                      <div className="mt-3 flex gap-2">
+                      <div className="mt-3 flex gap-2 flex-wrap">
                         {classes.map((cls) => (
                           <button
                             key={cls.id}
                             onClick={() => handleAddAiAssignment(assignment, cls.id)}
-                            className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded text-xs hover:bg-indigo-200 transition-colors"
+                            className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 transition-colors border border-gray-300"
                           >
-                            Add to {cls.code || cls.name}
+                            + {cls.code || cls.name}
                           </button>
                         ))}
                       </div>
@@ -817,6 +874,7 @@ function AssignmentContent() {
                 onClick={() => {
                   setAiResults(null)
                   setSelectedFile(null)
+                  setSelectedClassForAll('')
                   setShowUploadModal(false)
                 }}
                 className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
