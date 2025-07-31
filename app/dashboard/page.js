@@ -24,9 +24,11 @@ function DashboardContent() {
 
   const [completedSchedule, setCompletedSchedule] = useState([])
   const [tasks, setTasks] = useState([])
+  const [calendarEvents, setCalendarEvents] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingTasks, setLoadingTasks] = useState(true)
+  const [loadingCalendarEvents, setLoadingCalendarEvents] = useState(true)
   const [error, setError] = useState('')
   const [editingTask, setEditingTask] = useState(null)
   const [newTask, setNewTask] = useState({
@@ -42,7 +44,7 @@ function DashboardContent() {
   useEffect(() => {
     if (user) {
       loadTasks()
-      // fetchChatCompletion('read chapters 1-3', 3)
+      loadCalendarEvents()
     }
   }, [user])
 
@@ -114,6 +116,48 @@ function DashboardContent() {
     }
   }
 
+  const loadCalendarEvents = async () => {
+    try {
+      setLoadingCalendarEvents(true)
+      const response = await fetch(`/api/get-calendar-events?user_id=${user?.id}`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        console.log("CALENDAR EVENT DATA: ", data.events)
+        
+        // Transform calendar events to match our task format
+        const formattedEvents = data.events.map(event => ({
+          id: `calendar-${event.id}`,
+          title: event.title,
+          description: event.description,
+          due_date: event.start, // Use start time as "due date" for sorting
+          start_time: event.start,
+          end_time: event.end,
+          location: event.location,
+          isAllDay: event.isAllDay,
+          isCalendarEvent: true,
+          htmlLink: event.htmlLink,
+          priority: 'medium',
+          estimated_time: event.isAllDay ? 480 : 60, // 8 hours for all-day, 1 hour for timed events
+          status: 'pending' // Calendar events are always "pending" since they're upcoming
+        }))
+        
+        setCalendarEvents(formattedEvents || [])
+      } else {
+        console.error('Failed to load calendar events:', data.error)
+        if (data.needsAuth) {
+          console.log('Google calendar authentication required')
+        }
+        setCalendarEvents([]) // Set empty array on error
+      }
+    } catch (err) {
+      console.error('Error loading calendar events:', err)
+      setCalendarEvents([]) // Set empty array on error
+    } finally {
+      setLoadingCalendarEvents(false)
+    }
+  }
+
   const handleLogout = async () => {
     const { error } = await signOut()
     if (!error) {
@@ -143,32 +187,40 @@ function DashboardContent() {
     })
   }
 
-  // Get tasks for today's schedule using useMemo
-  const tasksForToday = useMemo(() => {
+  // Get all items (tasks + calendar events) for today's schedule using useMemo
+  const allItems = useMemo(() => {
+    return [...tasks, ...calendarEvents]
+  }, [tasks, calendarEvents])
+
+  const itemsForToday = useMemo(() => {
     const today = new Date()
     const todayStr = today.toDateString()
     
-    return tasks.filter(task => {
-      if (!task.due_date) return false
-      const taskDate = new Date(task.due_date)
-      return taskDate.toDateString() === todayStr
+    return allItems.filter(item => {
+      if (!item.due_date && !item.start_time) return false
+      const itemDate = new Date(item.due_date || item.start_time)
+      return itemDate.toDateString() === todayStr
     })
-  }, [tasks])
+  }, [allItems])
 
-  // Use today's tasks or default schedule
+  // Use today's items or default schedule
   const scheduleItems = useMemo(() => {
-    return tasksForToday.length > 0 
-      ? tasksForToday.map(task => ({
-          id: task.id,
-          text: `${new Date(task.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${task.title}`,
-          isTask: true
+    return itemsForToday.length > 0 
+      ? itemsForToday.map(item => ({
+          id: item.id,
+          text: item.isCalendarEvent 
+            ? `${new Date(item.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title} ${item.location ? `(${item.location})` : ''}`
+            : `${new Date(item.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title}`,
+          isTask: !item.isCalendarEvent,
+          isCalendarEvent: item.isCalendarEvent
         }))
       : defaultScheduleItems.map((item, idx) => ({
           id: `default-${idx}`,
           text: item,
-          isTask: false
+          isTask: false,
+          isCalendarEvent: false
         }))
-  }, [tasksForToday, defaultScheduleItems])
+  }, [itemsForToday, defaultScheduleItems])
 
   const dailyProgress = Math.round((completedSchedule.length / scheduleItems.length) * 100)
   const radius = 45
@@ -474,8 +526,8 @@ function DashboardContent() {
 
           {/* Tasks Due Today */}
           <div className="relative bg-white rounded-3xl shadow-xl p-6 h-fit">
-            <h2 className="text-2xl font-bold text-indigo-600 mb-4">Your Tasks</h2>
-            {loadingTasks ? (
+            <h2 className="text-2xl font-bold text-indigo-600 mb-4">Your Tasks & Events</h2>
+            {(loadingTasks || loadingCalendarEvents) ? (
               <div className="flex items-center justify-center py-8">
                 <svg className="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -484,41 +536,95 @@ function DashboardContent() {
               </div>
             ) : (
               <div className="space-y-4 max-h-96 overflow-y-auto">
-                {tasks.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No tasks yet. Click + to add your first task!</p>
-                ) : (
-                  tasks.map((task) => (
-                    <div key={task.id} className="bg-indigo-50 rounded-xl p-4 shadow relative group">
-                      <h3 className="font-semibold text-lg text-gray-900">{task.title}</h3>
-                      {task.description && (
-                        <p className="text-sm text-gray-600 mt-1">{task.description}</p>
-                      )}
-                      <p className="text-sm text-gray-500 mt-2">
-                        Due: {task.due_date ? new Date(task.due_date).toLocaleString() : 'No due date'}
+                {allItems.length === 0 ? (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500 mb-2">No tasks or events yet. Click + to add your first task!</p>
+                    {!loadingCalendarEvents && calendarEvents.length === 0 && (
+                      <p className="text-sm text-green-600">
+                        <a href={`/api/simple-calendar-auth?user_id=${user?.id}`} 
+                           target="_blank" 
+                           className="underline hover:text-green-800">
+                          Connect Google Calendar
+                        </a> to sync your calendar events
                       </p>
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        <button
-                          onClick={() => handleEditTask(task)}
-                          className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
-                          title="Edit task"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTask(task.id)}
-                          className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
-                          title="Delete task"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                    )}
+                  </div>
+                ) : (
+                  allItems.map((item) => (
+                    <div key={item.id} className={`rounded-xl p-4 shadow relative group ${
+                      item.isCalendarEvent ? 'bg-green-50 border border-green-200' : 'bg-indigo-50'
+                    }`}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-semibold text-lg text-gray-900">{item.title}</h3>
+                            {item.isCalendarEvent && (
+                              <div className="flex items-center gap-1">
+                                <svg className="w-4 h-4 text-green-600" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                                </svg>
+                                <span className="text-xs text-green-600 font-medium">Google Calendar</span>
+                              </div>
+                            )}
+                          </div>
+                          {item.description && (
+                            <p className="text-sm text-gray-600 mt-1">{item.description}</p>
+                          )}
+                          {item.isCalendarEvent ? (
+                            <div className="text-sm text-gray-500 mt-2">
+                              {item.isAllDay ? (
+                                <p>All day event</p>
+                              ) : (
+                                <p>
+                                  {new Date(item.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - 
+                                  {new Date(item.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </p>
+                              )}
+                              {item.location && (
+                                <p className="text-xs text-gray-400 mt-1">📍 {item.location}</p>
+                              )}
+                              {item.htmlLink && (
+                                <a href={item.htmlLink} target="_blank" rel="noopener noreferrer" 
+                                   className="text-xs text-green-600 hover:text-green-800 underline mt-1 block">
+                                  Open in Google Calendar
+                                </a>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-500 mt-2">
+                              Due: {item.due_date ? new Date(item.due_date).toLocaleString() : 'No due date'}
+                            </p>
+                          )}
+                        </div>
+                        {!item.isCalendarEvent && (
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                            <button
+                              onClick={() => handleEditTask(item)}
+                              className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
+                              title="Edit task"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTask(item.id)}
+                              className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
+                              title="Delete task"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      {task.status && (
+                      {item.status && (
                         <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-2 ${
-                          task.status === 'completed' ? 'bg-green-100 text-green-800' :
-                          task.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                          item.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          item.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
                           'bg-gray-100 text-gray-800'
                         }`}>
-                          {task.status.replace('_', ' ')}
+                          {item.status.replace('_', ' ')}
                         </span>
                       )}
                     </div>
