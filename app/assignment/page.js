@@ -222,16 +222,19 @@ function AssignmentContent() {
       // Show progress update
       setUploadProgress('Uploading syllabus to server...')
       
+      // Another delay to show upload step
+      await new Promise(resolve => setTimeout(resolve, 600))
+      
       const formData = new FormData()
       formData.append('file', selectedFile)
+
+      // Update to analyzing step before making the call
+      setUploadProgress('Analyzing syllabus with AI...')
 
       const response = await fetch('/api/parse-syllabus', {
         method: 'POST',
         body: formData,
       })
-
-      // Update progress during processing
-      setUploadProgress('Analyzing syllabus with AI...')
 
       const data = await response.json()
 
@@ -240,7 +243,7 @@ function AssignmentContent() {
         setTimeout(() => {
           setAiResults(data)
           setUploadError('')
-        }, 500) // Small delay to show completion
+        }, 700) // Slightly longer delay to show completion
       } else {
         setUploadError(data.error || 'Failed to parse file')
       }
