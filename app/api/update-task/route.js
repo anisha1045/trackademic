@@ -27,34 +27,50 @@ export async function PUT(request) {
       }
     )
 
-    // Get the current user
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    // Get the current user (secure method)
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    if (sessionError || !session) {
+    if (userError || !user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const body = await request.json()
-    const { id, title, description, due_date } = body
+    const { id, title, description, due_date, done } = body
 
     // Validate required fields
-    if (!id || !title) {
+    if (!id) {
       return Response.json({ 
-        error: 'Task ID and title are required' 
+        error: 'Task ID is required' 
+      }, { status: 400 })
+    }
+    
+    // If updating general task info, title is required. For done-only updates, title not required
+    if (!title && typeof done !== 'boolean') {
+      return Response.json({ 
+        error: 'Task title is required when updating task details' 
       }, { status: 400 })
     }
 
     // Update the task (only if it belongs to the current user)
+    const updateData = {
+      updated_at: new Date().toISOString()
+    }
+    
+    // Add task details only if provided
+    if (title) updateData.title = title
+    if (description) updateData.description = description
+    if (due_date) updateData.due_date = due_date
+    
+    // Add done field only if it's provided (allows updating just done status)
+    if (typeof done === 'boolean') {
+      updateData.done = done
+    }
+    
     const { data, error } = await supabase
       .from('Tasks')
-      .update({
-        title,
-        description,
-        due_date,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', id)
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .select()
 
     if (error) {

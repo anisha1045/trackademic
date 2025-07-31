@@ -26,6 +26,7 @@ function CalendarContent() {
   const [loadingEvents, setLoadingEvents] = useState(false)
   const [selectedDateEvents, setSelectedDateEvents] = useState([])
   const [events, setEvents] = useState([])
+  const [monthlyTasks, setMonthlyTasks] = useState([])
   
   // Mock calendar events - fallback when Google Calendar is not synced
   const mockEvents = [
@@ -59,6 +60,7 @@ function CalendarContent() {
     if (user?.id) {
       loadCalendarEvents()
       checkGoogleSyncStatus()
+      loadMonthlyTasks()
     }
     // Initialize with mock events for fallback
     setEvents(mockEvents)
@@ -68,6 +70,40 @@ function CalendarContent() {
   useEffect(() => {
     fetchEventsForSelectedDate()
   }, [selectedDate])
+
+  useEffect(() => {
+    if (user?.id) {
+      loadMonthlyTasks()
+    }
+  }, [currentDate, user?.id])
+
+  const loadMonthlyTasks = async () => {
+    try {
+      const response = await fetch('/api/get-tasks')
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks')
+      }
+      
+      const data = await response.json()
+      
+      // Transform all tasks to include display properties
+      const transformedTasks = Array.isArray(data.data) ? data.data.map(item => ({
+        ...item,
+        time: item.due_date ? new Date(item.due_date).toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit' 
+        }) : 'All day',
+        type: item.class_id ? 'assignment' : 'task',
+        color: item.done ? 'bg-green-500' : (item.class_id ? 'bg-red-500' : 'bg-blue-500'),
+        date: item.due_date ? new Date(item.due_date).toLocaleDateString('en-CA') : null // Extract YYYY-MM-DD in local timezone
+      })) : []
+      
+      setMonthlyTasks(transformedTasks)
+    } catch (error) {
+      console.error('Error loading monthly tasks:', error)
+      setMonthlyTasks([])
+    }
+  }
 
   const checkGoogleSyncStatus = async () => {
     try {
@@ -169,8 +205,20 @@ function CalendarContent() {
       
       const data = await response.json()
       console.log("DATA: ", data)
-      // Ensure we always set an array, even if the response is null/undefined
-      setSelectedDateEvents(Array.isArray(data.data) ? data.data : [])
+      
+      // Transform the data to include proper display properties
+      const transformedEvents = Array.isArray(data.data) ? data.data.map(item => ({
+        ...item,
+        time: item.due_date ? new Date(item.due_date).toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit' 
+        }) : 'All day',
+        type: item.class_id ? 'assignment' : 'task', // Assignments have class_id, tasks might not
+        color: item.done ? 'bg-green-500' : (item.class_id ? 'bg-red-500' : 'bg-blue-500'), // Green for done, red for assignments, blue for tasks
+        date: item.due_date ? new Date(item.due_date).toLocaleDateString('en-CA') : null // Extract YYYY-MM-DD in local timezone
+      })) : []
+      
+      setSelectedDateEvents(transformedEvents)
     } catch (error) {
       console.error('Error fetching events:', error)
       setSelectedDateEvents([]) // Explicitly set empty array on error
@@ -213,6 +261,10 @@ function CalendarContent() {
 
   const navigateMonth = (direction) => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + direction, 1))
+    // Refresh tasks when navigating to different months
+    if (user?.id) {
+      loadMonthlyTasks()
+    }
   }
 
   const isSelected = (day) => {
@@ -230,11 +282,14 @@ function CalendarContent() {
   const getEventsForDay = (day, month = currentDate.getMonth(), year = currentDate.getFullYear()) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     
-    // If Google Calendar is synced, show Google events
+    // Get tasks/assignments for this day
+    const tasksForDay = monthlyTasks.filter(task => task.date === dateStr)
+    
+    // If Google Calendar is synced, show Google events + tasks
     if (isGoogleSynced && googleEvents.length > 0) {
       const googleEventsForDay = googleEvents.filter(event => {
         const eventDate = new Date(event.start)
-        const eventDateStr = eventDate.toISOString().split('T')[0]
+         const eventDateStr = eventDate.toLocaleDateString('en-CA')
         return eventDateStr === dateStr
       }).map(event => ({
         ...event,
@@ -245,11 +300,13 @@ function CalendarContent() {
         color: event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500' 
       }))
       
-      return googleEventsForDay
+      // Combine Google events and tasks
+      return [...googleEventsForDay, ...tasksForDay]
     }
     
-    // Fallback to mock events
-    return events.filter(event => event.date === dateStr)
+    // Show tasks + mock events if no Google sync
+    const mockEventsForDay = events.filter(event => event.date === dateStr)
+    return [...tasksForDay, ...mockEventsForDay]
   }
 
   const formatEventTime = (dateStr) => {
@@ -495,61 +552,95 @@ function CalendarContent() {
         <div className="mt-6 bg-white rounded-3xl shadow-xl p-6">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-bold text-indigo-600">
-              {isGoogleSynced && googleEvents.length > 0 ? 'Upcoming Events' : `Tasks for ${formatDate(selectedDate)}`}
+              {isGoogleSynced && googleEvents.length > 0 ? 'Events & Tasks' : `Tasks & Assignments for ${formatDate(selectedDate)}`}
             </h3>
             {loadingEvents && (
               <div className="text-sm text-gray-500">Loading...</div>
             )}
           </div>
           
+          {/* Legend */}
+          <div className="flex gap-4 mb-4 text-xs flex-wrap">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+              <span className="text-gray-600">Tasks</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+              <span className="text-gray-600">Assignments</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+              <span className="text-gray-600">Completed</span>
+            </div>
+            {isGoogleSynced && (
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-full bg-green-600"></div>
+                <span className="text-gray-600">Calendar Events</span>
+              </div>
+            )}
+          </div>
+          
           <div className="space-y-3">
-            {/* Google Calendar Events */}
-            {isGoogleSynced && googleEvents.length > 0 ? (
-              googleEvents.slice(0, 5).map((event) => (
-                <div key={event.id} className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                  <div className={`w-3 h-3 rounded-full ${
-                    event.title.startsWith('📚') ? 'bg-green-600' : 'bg-blue-500'
-                  }`}></div>
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900">{event.title}</div>
-                    <div className="text-sm text-gray-600">
-                      {formatEventTime(event.start)}
-                      {event.location && <span> • {event.location}</span>}
-                    </div>
-                  </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    event.title.startsWith('📚') ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                  }`}>
-                    {event.isGoogleEvent ? 'Google' : 'Local'}
-                  </span>
-                </div>
-              ))
-            ) : selectedDateEvents.length === 0 ? (
+            {selectedDateEvents.length === 0 && (!isGoogleSynced || googleEvents.length === 0) ? (
               <div className="text-center py-8 text-gray-500">
                 <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 002 2z" />
                 </svg>
-                <p className="text-sm font-medium">No tasks for the selected date</p>
+                <p className="text-sm font-medium">No events for the selected date</p>
               </div>
             ) : (
-              selectedDateEvents.map((event) => (
-                <div key={event.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <div className={`w-3 h-3 rounded-full ${event.color || 'bg-blue-500'}`}></div>
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900">{event.title}</div>
-                    <div className="text-sm text-gray-600">
-                      {event.date} at {event.time || 'All day'}
+              <>
+                {/* Show Google Calendar Events */}
+                {isGoogleSynced && googleEvents.length > 0 && googleEvents
+                  .filter(event => {
+                    const eventDate = new Date(event.start).toLocaleDateString('en-CA')
+                    const selectedDateStr = formatDateToAPI(selectedDate)
+                    return eventDate === selectedDateStr
+                  })
+                  .map((event) => (
+                    <div key={`google-${event.id}`} className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                      <div className="w-3 h-3 rounded-full bg-green-600"></div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{event.title}</div>
+                        <div className="text-sm text-gray-600">
+                          {formatEventTime(event.start)}
+                          {event.location && <span> • {event.location}</span>}
+                        </div>
+                      </div>
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        Calendar
+                      </span>
                     </div>
-                  </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    event.type === 'class' ? 'bg-blue-100 text-blue-800' :
-                    event.type === 'assignment' ? 'bg-red-100 text-red-800' :
-                    'bg-green-100 text-green-800'
+                  ))
+                }
+                
+                {/* Show Tasks and Assignments */}
+                {selectedDateEvents.map((event) => (
+                  <div key={`task-${event.id}`} className={`flex items-center gap-3 p-3 rounded-lg ${
+                    event.done ? 'bg-green-50' : (event.type === 'assignment' ? 'bg-red-50' : 'bg-blue-50')
                   }`}>
-                    {event.type}
-                  </span>
-                </div>
-              ))
+                    <div className={`w-3 h-3 rounded-full ${
+                      event.done ? 'bg-green-500' : (event.type === 'assignment' ? 'bg-red-500' : 'bg-blue-500')
+                    }`}></div>
+                    <div className="flex-1">
+                      <div className={`font-medium text-gray-900 ${event.done ? 'line-through text-gray-500' : ''}`}>
+                        {event.title}
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        {event.time}
+                        {event.description && <span> • {event.description}</span>}
+                      </div>
+                    </div>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      event.done ? 'bg-green-100 text-green-800' : 
+                      (event.type === 'assignment' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800')
+                    }`}>
+                      {event.done ? 'Complete' : (event.type === 'assignment' ? 'Assignment' : 'Task')}
+                    </span>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         </div>

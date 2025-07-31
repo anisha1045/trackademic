@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
-import { Edit, Trash2 } from 'lucide-react'
+import { Edit, Trash2, Undo2, Check } from 'lucide-react'
 
 function AssignmentContent() {
   const { user, signOut } = useAuth()
@@ -14,6 +14,7 @@ function AssignmentContent() {
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [uploadLoading, setUploadLoading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState('')
   const [error, setError] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [editingAssignment, setEditingAssignment] = useState(null)
@@ -22,6 +23,7 @@ function AssignmentContent() {
   const [aiResults, setAiResults] = useState(null)
   const [dragActive, setDragActive] = useState(false)
   const [syncStatus, setSyncStatus] = useState(null)
+  const [selectedClassForAll, setSelectedClassForAll] = useState('')
   const [newAssignment, setNewAssignment] = useState({
     title: '',
     description: '',
@@ -36,6 +38,30 @@ function AssignmentContent() {
     const { error } = await signOut()
     if (!error) {
       router.push('/login')
+    }
+  }
+
+  const handleMarkDone = async (taskId, currentDoneStatus) => {
+    try {
+      const response = await fetch('/api/update-task', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: taskId,
+          done: !currentDoneStatus
+        }),
+      })
+
+      if (response.ok) {
+        // Reload assignments to reflect the updated done status
+        loadAssignments()
+      } else {
+        console.error('Failed to update assignment done status')
+      }
+    } catch (error) {
+      console.error('Error updating assignment done status:', error)
     }
   }
 
@@ -109,7 +135,8 @@ function AssignmentContent() {
           class_id: task.class_id,
           class_name: task.class_name || '',
           priority: task.priority || 'medium',
-          estimated_hours: task.estimated_time || 1
+          estimated_hours: task.estimated_time || 1,
+          done: task.done || false
         }))
         setAssignments(tasks)
       } else {
@@ -186,10 +213,23 @@ function AssignmentContent() {
 
     setUploadLoading(true)
     setUploadError('')
+    setUploadProgress('Preparing file for upload...')
 
     try {
+      // Small delay to show initial step
+      await new Promise(resolve => setTimeout(resolve, 800))
+      
+      // Show progress update
+      setUploadProgress('Uploading syllabus to server...')
+      
+      // Another delay to show upload step
+      await new Promise(resolve => setTimeout(resolve, 600))
+      
       const formData = new FormData()
       formData.append('file', selectedFile)
+
+      // Update to analyzing step before making the call
+      setUploadProgress('Analyzing syllabus with AI...')
 
       const response = await fetch('/api/parse-syllabus', {
         method: 'POST',
@@ -199,8 +239,11 @@ function AssignmentContent() {
       const data = await response.json()
 
       if (response.ok) {
-        setAiResults(data)
-        setUploadError('')
+        setUploadProgress('Processing complete!')
+        setTimeout(() => {
+          setAiResults(data)
+          setUploadError('')
+        }, 700) // Slightly longer delay to show completion
       } else {
         setUploadError(data.error || 'Failed to parse file')
       }
@@ -208,6 +251,7 @@ function AssignmentContent() {
       setUploadError('Network error. Please try again.')
     } finally {
       setUploadLoading(false)
+      setUploadProgress('')
     }
   }
 
@@ -263,7 +307,32 @@ function AssignmentContent() {
     // Reset state and close modal
     setAiResults(null)
     setSelectedFile(null)
+    setSelectedClassForAll('')
     setShowUploadModal(false)
+  }
+
+  const handleAddAllToSelectedClass = async () => {
+    if (!aiResults?.assignments) return
+
+    if (selectedClassForAll) {
+      // Add to selected class
+      await handleAddAllAiAssignments(selectedClassForAll)
+    } else {
+      // No class selected - add as general assignments (not tied to any class)
+      let successCount = 0
+      for (const assignment of aiResults.assignments) {
+        const success = await handleAddAiAssignment(assignment, null) // null = general assignment
+        if (success) successCount++
+      }
+
+      alert(`Added ${successCount} of ${aiResults.assignments.length} assignments as general assignments`)
+      
+      // Reset state and close modal
+      setAiResults(null)
+      setSelectedFile(null)
+      setSelectedClassForAll('')
+      setShowUploadModal(false)
+    }
   }
 
   // Drag and drop handlers
@@ -459,11 +528,13 @@ function AssignmentContent() {
         {/* Assignments Grid */}
         <div className="grid gap-4">
           {assignments.map((assignment) => (
-            <div key={assignment.id} className="bg-white rounded-3xl shadow-xl p-6 hover:shadow-2xl transition-shadow">
+            <div key={assignment.id} className={`rounded-3xl shadow-xl p-6 hover:shadow-2xl transition-shadow ${
+              assignment.done ? 'bg-green-100 border border-green-200' : 'bg-white'
+            }`}>
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-xl font-semibold text-gray-800">{assignment.title}</h3>
+                    <h3 className={`text-xl font-semibold text-gray-800 ${assignment.done ? 'line-through text-gray-500' : ''}`}>{assignment.title}</h3>
                     <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getPriorityColor(assignment.priority)}`}>
                       {assignment.priority}
                     </span>
@@ -477,6 +548,21 @@ function AssignmentContent() {
                   </div>
                 </div>
                 <div className="flex gap-1">
+                  <button
+                    onClick={() => handleMarkDone(assignment.id, assignment.done)}
+                    className={`p-1 rounded-md transition-colors ${
+                      assignment.done 
+                        ? 'text-gray-600 hover:text-gray-800 hover:bg-gray-50' 
+                        : 'text-green-600 hover:text-green-800 hover:bg-green-50'
+                    }`}
+                    title={assignment.done ? 'Mark as undone' : 'Mark as done'}
+                  >
+                    {assignment.done ? (
+                      <Undo2 className="w-4 h-4" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                  </button>
                   <button
                     className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
                     title="Edit assignment"
@@ -686,7 +772,36 @@ function AssignmentContent() {
       {/* Upload Syllabus Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto relative">
+            {/* Loading Overlay */}
+            {uploadLoading && (
+              <div className="absolute inset-0 bg-white bg-opacity-95 rounded-xl flex items-center justify-center z-10">
+                <div className="text-center">
+                  {/* Animated Spinner */}
+                  <div className="relative mb-6">
+                    <div className="w-16 h-16 border-4 border-indigo-200 rounded-full animate-spin border-t-indigo-600 mx-auto"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-8 h-8 bg-indigo-100 rounded-full animate-pulse"></div>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Text */}
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-indigo-600">Processing Syllabus</h3>
+                    <p className="text-gray-600 font-medium">{uploadProgress}</p>
+                    
+                    {/* Progress Steps */}
+                    <div className="flex justify-center space-x-2 mt-4">
+                      <div className={`w-2 h-2 rounded-full ${uploadProgress.includes('Preparing') ? 'bg-indigo-600 animate-bounce' : 'bg-indigo-200'}`}></div>
+                      <div className={`w-2 h-2 rounded-full ${uploadProgress.includes('Uploading') ? 'bg-indigo-600 animate-bounce' : 'bg-indigo-200'}`} style={{ animationDelay: '0.1s' }}></div>
+                      <div className={`w-2 h-2 rounded-full ${uploadProgress.includes('Analyzing') ? 'bg-indigo-600 animate-bounce' : 'bg-indigo-200'}`} style={{ animationDelay: '0.2s' }}></div>
+                      <div className={`w-2 h-2 rounded-full ${uploadProgress.includes('complete') ? 'bg-green-600 animate-bounce' : 'bg-indigo-200'}`} style={{ animationDelay: '0.3s' }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <h2 className="text-2xl font-bold text-indigo-600 mb-6">Upload Syllabus</h2>
             
             <div className="space-y-4">
@@ -734,17 +849,25 @@ function AssignmentContent() {
                     setShowUploadModal(false)
                     setSelectedFile(null)
                     setUploadError('')
+                    setUploadProgress('')
                   }}
-                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+                  disabled={uploadLoading}
+                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleFileUpload}
                   disabled={!selectedFile || uploadLoading}
-                  className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  {uploadLoading ? 'Uploading...' : 'Upload'}
+                  {uploadLoading && (
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  )}
+                  {uploadLoading ? 'Processing...' : 'Upload & Analyze'}
                 </button>
               </div>
             </div>
@@ -760,25 +883,56 @@ function AssignmentContent() {
             
             {aiResults.assignments && aiResults.assignments.length > 0 && (
               <div className="space-y-4">
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Class for All Assignments
-                  </label>
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleAddAllAiAssignments(e.target.value)
-                      }
-                    }}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
-                  >
-                    <option value="">Select a class to add all assignments</option>
-                    {classes.map((cls) => (
-                      <option key={cls.id} value={cls.id}>
-                        {cls.code ? `${cls.code} - ${cls.name}` : cls.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-3 mb-3">
+                    <h3 className="text-lg font-semibold text-blue-900">
+                      Quick Add All Assignments
+                    </h3>
+                    <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
+                      {aiResults.assignments.length} found
+                    </span>
+                  </div>
+                  
+                  <div className="flex gap-3 items-end">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Select Class (optional)
+                      </label>
+                      <select
+                        value={selectedClassForAll}
+                        onChange={(e) => setSelectedClassForAll(e.target.value)}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900"
+                      >
+                        <option value="">Leave blank for general assignments, or choose a specific class</option>
+                        {classes.map((cls) => (
+                          <option key={cls.id} value={cls.id}>
+                            {cls.code ? `${cls.code} - ${cls.name}` : cls.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <button
+                      onClick={handleAddAllToSelectedClass}
+                      disabled={loading}
+                      className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      {loading ? 'Adding...' : selectedClassForAll ? 'Add All to Class' : 'Add as General Assignments'}
+                    </button>
+                  </div>
+                  
+                  <p className="text-xs text-gray-600 mt-2">
+                    {selectedClassForAll 
+                      ? `Will add all assignments to the selected class` 
+                      : `Will add all assignments as general assignments (not tied to any specific class)`
+                    }
+                  </p>
+                </div>
+
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">
+                    Or add assignments individually:
+                  </h4>
                 </div>
 
                 <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -795,14 +949,14 @@ function AssignmentContent() {
                         <span>Due: {assignment.due_date}</span>
                         <span>{assignment.estimated_hours}h estimated</span>
                       </div>
-                      <div className="mt-3 flex gap-2">
+                      <div className="mt-3 flex gap-2 flex-wrap">
                         {classes.map((cls) => (
                           <button
                             key={cls.id}
                             onClick={() => handleAddAiAssignment(assignment, cls.id)}
-                            className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded text-xs hover:bg-indigo-200 transition-colors"
+                            className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 transition-colors border border-gray-300"
                           >
-                            Add to {cls.code || cls.name}
+                            + {cls.code || cls.name}
                           </button>
                         ))}
                       </div>
@@ -817,6 +971,7 @@ function AssignmentContent() {
                 onClick={() => {
                   setAiResults(null)
                   setSelectedFile(null)
+                  setSelectedClassForAll('')
                   setShowUploadModal(false)
                 }}
                 className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"

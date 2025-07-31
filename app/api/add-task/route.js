@@ -27,16 +27,16 @@ export async function POST(req) {
     )
     
     // Get the current user session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
     
-    if (sessionError || !session) {
-      console.error("Authentication error:", sessionError)
+    if (userError || !user) {
+      console.error("Authentication error:", userError)
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
     
     // Verify the user_id matches the authenticated user
-    if (body.user_id !== session.user.id) {
-      console.error("User ID mismatch:", { bodyUserId: body.user_id, sessionUserId: session.user.id })
+    if (body.user_id !== user.id) {
+      console.error("User ID mismatch:", { bodyUserId: body.user_id, sessionUserId: user.id })
       return Response.json({ error: 'Unauthorized: User ID mismatch' }, { status: 403 })
     }
     

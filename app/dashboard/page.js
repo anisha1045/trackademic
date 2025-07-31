@@ -4,31 +4,25 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
-import { Edit, Trash2 } from 'lucide-react'
+import { Edit, Trash2, Undo2, Check } from 'lucide-react'
 
 function DashboardContent() {
   const { user, signOut } = useAuth()
   const router = useRouter()
 
-  // Fallback schedule items if no tasks for today
-  const defaultScheduleItems = [
-    '8:00 AM – Review flashcards',
-    '9:00 AM – Algorithms Lecture', 
-    '10:00 AM – Study Session',
-    '12:00 PM – Lunch',
-    '1:00 PM – Group Project Work',
-    '3:00 PM – Free Slot',
-    '4:00 PM – Midterm Review',
-    '6:00 PM – Workout'
-  ]
+  // No default schedule items - only show real tasks and calendar events
 
-  const [completedSchedule, setCompletedSchedule] = useState([])
+
   const [tasks, setTasks] = useState([])
+  const [calendarEvents, setCalendarEvents] = useState([])
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingTasks, setLoadingTasks] = useState(true)
+  const [loadingCalendarEvents, setLoadingCalendarEvents] = useState(true)
   const [error, setError] = useState('')
   const [editingTask, setEditingTask] = useState(null)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [taskToDelete, setTaskToDelete] = useState(null)
   const [newTask, setNewTask] = useState({
     title: '',
     notes: '',
@@ -42,7 +36,7 @@ function DashboardContent() {
   useEffect(() => {
     if (user) {
       loadTasks()
-      // fetchChatCompletion('read chapters 1-3', 3)
+      loadCalendarEvents()
     }
   }, [user])
 
@@ -114,6 +108,47 @@ function DashboardContent() {
     }
   }
 
+  const loadCalendarEvents = async () => {
+    try {
+      setLoadingCalendarEvents(true)
+      const response = await fetch(`/api/get-calendar-events?user_id=${user?.id}`)
+      const data = await response.json()
+      
+      if (response.ok) {
+        console.log("CALENDAR EVENT DATA: ", data.events)
+        
+        // Transform calendar events to match our task format
+        const formattedEvents = data.events.map(event => ({
+          id: `calendar-${event.id}`,
+          title: event.title,
+          description: event.description,
+          due_date: event.start, // Use start time as "due date" for sorting
+          start_time: event.start,
+          end_time: event.end,
+          location: event.location,
+          isAllDay: event.isAllDay,
+          isCalendarEvent: true,
+          htmlLink: event.htmlLink,
+          priority: 'medium',
+          estimated_time: event.isAllDay ? 480 : 60, // 8 hours for all-day, 1 hour for timed events
+          status: 'pending' // Calendar events are always "pending" since they're upcoming
+        }))
+        
+        setCalendarEvents(formattedEvents || [])
+      } else {
+        if (data.needsAuth) {
+          console.log('Google calendar authentication required')
+        }
+        setCalendarEvents([]) // Set empty array on error
+      }
+    } catch (err) {
+      console.error('Error loading calendar events:', err)
+      setCalendarEvents([]) // Set empty array on error
+    } finally {
+      setLoadingCalendarEvents(false)
+    }
+  }
+
   const handleLogout = async () => {
     const { error } = await signOut()
     if (!error) {
@@ -121,8 +156,28 @@ function DashboardContent() {
     }
   }
 
-  const handleMarkDone = (item) => {
-    setCompletedSchedule((prev) => [...prev, item])
+  const handleMarkDone = async (taskId, currentDoneStatus) => {
+    try {
+      const response = await fetch('/api/update-task', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: taskId,
+          done: !currentDoneStatus
+        }),
+      })
+
+      if (response.ok) {
+        // Reload tasks to reflect the updated done status
+        loadTasks()
+      } else {
+        console.error('Failed to update task done status')
+      }
+    } catch (error) {
+      console.error('Error updating task done status:', error)
+    }
   }
 
   const formatTime = (isoString) => {
@@ -131,6 +186,24 @@ function DashboardContent() {
       dateStyle: 'medium',
       timeStyle: 'short'
     })
+  }
+
+  const formatDateForInput = (dateString) => {
+    const date = new Date(dateString)
+    // Get the timezone offset in minutes and convert to milliseconds
+    const timezoneOffset = date.getTimezoneOffset() * 60000
+    // Adjust for timezone to get local time
+    const localDate = new Date(date.getTime() - timezoneOffset)
+    // Format for datetime-local input (YYYY-MM-DDTHH:MM)
+    return localDate.toISOString().slice(0, 16)
+  }
+
+  const formatDateForAPI = (datetimeLocalString) => {
+    // datetimeLocalString is like "2025-07-31T03:31" from datetime-local input
+    // We need to treat this as the user's local time and convert it properly
+    const localDate = new Date(datetimeLocalString)
+    // Return as ISO string which will be properly stored
+    return localDate.toISOString()
   }
 
   const getCurrentDate = () => {
@@ -143,34 +216,36 @@ function DashboardContent() {
     })
   }
 
-  // Get tasks for today's schedule using useMemo
-  const tasksForToday = useMemo(() => {
+  // Get all items (tasks + calendar events) for today's schedule using useMemo
+  const allItems = useMemo(() => {
+    return [...tasks, ...calendarEvents]
+  }, [tasks, calendarEvents])
+
+  const itemsForToday = useMemo(() => {
     const today = new Date()
     const todayStr = today.toDateString()
     
-    return tasks.filter(task => {
-      if (!task.due_date) return false
-      const taskDate = new Date(task.due_date)
-      return taskDate.toDateString() === todayStr
+    return allItems.filter(item => {
+      if (!item.due_date && !item.start_time) return false
+      const itemDate = new Date(item.due_date || item.start_time)
+      return itemDate.toDateString() === todayStr
     })
-  }, [tasks])
+  }, [allItems])
 
-  // Use today's tasks or default schedule
+  // Only show real tasks and calendar events for today
   const scheduleItems = useMemo(() => {
-    return tasksForToday.length > 0 
-      ? tasksForToday.map(task => ({
-          id: task.id,
-          text: `${new Date(task.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${task.title}`,
-          isTask: true
-        }))
-      : defaultScheduleItems.map((item, idx) => ({
-          id: `default-${idx}`,
-          text: item,
-          isTask: false
-        }))
-  }, [tasksForToday, defaultScheduleItems])
+    return itemsForToday.map(item => ({
+      id: item.id,
+      text: item.isCalendarEvent 
+        ? `${new Date(item.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title} ${item.location ? `(${item.location})` : ''}`
+        : `${new Date(item.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title}`,
+      isTask: !item.isCalendarEvent,
+      isCalendarEvent: item.isCalendarEvent,
+      done: item.done || false // Add done status from database
+    }))
+  }, [itemsForToday])
 
-  const dailyProgress = Math.round((completedSchedule.length / scheduleItems.length) * 100)
+  const dailyProgress = scheduleItems.length > 0 ? Math.round((scheduleItems.filter(item => item.done).length / scheduleItems.length) * 100) : 0
   const radius = 45
   const circumference = 2 * Math.PI * radius
   const offset = circumference * (1 - dailyProgress / 100)
@@ -193,7 +268,7 @@ function DashboardContent() {
         body: JSON.stringify({
           title: newTask.title,
           description: newTask.notes,
-          due_date: newTask.due,
+          due_date: formatDateForAPI(newTask.due),
           type: 'task',
           status: 'pending',
           priority: newTask.priority,
@@ -238,7 +313,7 @@ function DashboardContent() {
           id: editingTask.id,
           title: newTask.title,
           description: newTask.notes,
-          due_date: newTask.due,
+          due_date: formatDateForAPI(newTask.due),
           user_id: user?.id
         }),
       })
@@ -261,32 +336,45 @@ function DashboardContent() {
     }
   }
 
-  const handleDeleteTask = async (taskId) => {
-    if (!confirm('Are you sure you want to delete this task?')) {
-      return
-    }
+  const handleDeleteTask = (taskId) => {
+    setTaskToDelete(taskId)
+    setShowDeleteModal(true)
+  }
+
+  const confirmDeleteTask = async () => {
+    if (!taskToDelete) return
 
     try {
+      setLoading(true)
       const response = await fetch('/api/delete-task', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: taskId,
+          id: taskToDelete,
           user_id: user?.id
         }),
       })
 
       if (response.ok) {
         await loadTasks() // Reload tasks from database
+        setShowDeleteModal(false)
+        setTaskToDelete(null)
       } else {
         const data = await response.json()
         setError(data.error?.message || 'Failed to delete task')
       }
     } catch (err) {
       setError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
     }
+  }
+
+  const cancelDeleteTask = () => {
+    setShowDeleteModal(false)
+    setTaskToDelete(null)
   }
 
   const handleEditTask = (task) => {
@@ -294,7 +382,7 @@ function DashboardContent() {
     setNewTask({
       title: task.title,
       notes: task.description || '',
-      due: task.due_date ? new Date(task.due_date).toISOString().slice(0, 16) : ''
+      due: task.due_date ? formatDateForInput(task.due_date) : ''
     })
     setShowModal(true)
   }
@@ -379,7 +467,7 @@ function DashboardContent() {
       body: JSON.stringify({
         title,
         description: originalTask.notes,
-        due_date: originalTask.due,
+        due_date: formatDateForAPI(originalTask.due),
         type: 'task',
         status: 'pending',
         priority: originalTask.priority,
@@ -412,26 +500,62 @@ function DashboardContent() {
           <h2 className="text-2xl font-bold text-indigo-600 mb-4">{getCurrentDate()}</h2>
           <div className="space-y-3">
             {scheduleItems.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No tasks scheduled for today</p>
+              <div className="text-center py-12">
+                <div className="text-gray-400 text-6xl mb-4">📅</div>
+                <p className="text-gray-500 text-lg mb-2">No tasks or events scheduled for today</p>
+                <p className="text-gray-400 text-sm">Add some tasks or sync your calendar to get started!</p>
+              </div>
             ) : (
               scheduleItems.map((item, idx) => {
-                const isDone = completedSchedule.includes(item.text)
+                const isDone = item.done
                 return (
                   <div
                     key={item.id}
-                    className={`p-4 rounded-xl border flex justify-between items-center transition-colors duration-300 ${
+                    className={`p-4 rounded-xl border transition-colors duration-300 group ${
                       isDone ? 'bg-green-100 border-green-200' : 'bg-indigo-50 border-indigo-100'
                     }`}
                   >
-                    <span>{item.text}</span>
-                    {!isDone && (
-                      <button
-                        onClick={() => handleMarkDone(item.text)}
-                        className="bg-green-700 hover:bg-green-800 text-white text-sm px-3 py-1 rounded-lg"
-                      >
-                        ✔ Done
-                      </button>
-                    )}
+                    <div className="flex justify-between items-center">
+                      <span className={isDone ? 'line-through text-gray-500' : ''}>{item.text}</span>
+                      {item.isTask && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleEditTask(allItems.find(task => task.id === item.id))}
+                            className="text-indigo-600 hover:text-indigo-800 p-2 rounded-md hover:bg-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Edit task"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTask(item.id)}
+                            className="text-red-600 hover:text-red-800 p-2 rounded-md hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Delete task"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleMarkDone(item.id, item.done)}
+                            className={`text-white text-sm px-3 py-1 rounded-lg transition-colors flex items-center gap-1 ${
+                              isDone 
+                                ? 'bg-gray-500 hover:bg-gray-600' 
+                                : 'bg-green-700 hover:bg-green-800'
+                            }`}
+                          >
+                            {isDone ? (
+                              <>
+                                <Undo2 className="w-4 h-4" />
+                                Undo
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-4 h-4" />
+                                Done
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )
               })
@@ -474,8 +598,8 @@ function DashboardContent() {
 
           {/* Tasks Due Today */}
           <div className="relative bg-white rounded-3xl shadow-xl p-6 h-fit">
-            <h2 className="text-2xl font-bold text-indigo-600 mb-4">Your Tasks</h2>
-            {loadingTasks ? (
+            <h2 className="text-2xl font-bold text-indigo-600 mb-4">Your Tasks & Events</h2>
+            {(loadingTasks || loadingCalendarEvents) ? (
               <div className="flex items-center justify-center py-8">
                 <svg className="animate-spin h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -484,41 +608,111 @@ function DashboardContent() {
               </div>
             ) : (
               <div className="space-y-4 max-h-96 overflow-y-auto">
-                {tasks.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No tasks yet. Click + to add your first task!</p>
-                ) : (
-                  tasks.map((task) => (
-                    <div key={task.id} className="bg-indigo-50 rounded-xl p-4 shadow relative group">
-                      <h3 className="font-semibold text-lg text-gray-900">{task.title}</h3>
-                      {task.description && (
-                        <p className="text-sm text-gray-600 mt-1">{task.description}</p>
-                      )}
-                      <p className="text-sm text-gray-500 mt-2">
-                        Due: {task.due_date ? new Date(task.due_date).toLocaleString() : 'No due date'}
+                {allItems.length === 0 ? (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500 mb-2">No tasks or events yet. Click + to add your first task!</p>
+                    {!loadingCalendarEvents && calendarEvents.length === 0 && (
+                      <p className="text-sm text-green-600">
+                        <a href={`/api/simple-calendar-auth?user_id=${user?.id}`} 
+                           target="_blank" 
+                           className="underline hover:text-green-800">
+                          Connect Google Calendar
+                        </a> to sync your calendar events
                       </p>
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                        <button
-                          onClick={() => handleEditTask(task)}
-                          className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
-                          title="Edit task"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTask(task.id)}
-                          className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
-                          title="Delete task"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                    )}
+                  </div>
+                ) : (
+                  allItems.map((item) => (
+                    <div key={item.id} className={`rounded-xl p-4 shadow relative group ${
+                      item.isCalendarEvent ? 'bg-green-50 border border-green-200' : 
+                      item.done ? 'bg-green-100 border border-green-200' : 'bg-indigo-50'
+                    }`}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className={`font-semibold text-lg text-gray-900 ${item.done ? 'line-through text-gray-500' : ''}`}>{item.title}</h3>
+                            {item.isCalendarEvent && (
+                              <div className="flex items-center gap-1">
+                                <svg className="w-4 h-4 text-green-600" viewBox="0 0 24 24" fill="currentColor">
+                                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                                </svg>
+                                <span className="text-xs text-green-600 font-medium">Google Calendar</span>
+                              </div>
+                            )}
+                          </div>
+                          {item.description && (
+                            <p className="text-sm text-gray-600 mt-1">{item.description}</p>
+                          )}
+                          {item.isCalendarEvent ? (
+                            <div className="text-sm text-gray-500 mt-2">
+                              {item.isAllDay ? (
+                                <p>All day event</p>
+                              ) : (
+                                <p>
+                                  {new Date(item.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - 
+                                  {new Date(item.end_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </p>
+                              )}
+                              {item.location && (
+                                <p className="text-xs text-gray-400 mt-1">📍 {item.location}</p>
+                              )}
+                              {item.htmlLink && (
+                                <a href={item.htmlLink} target="_blank" rel="noopener noreferrer" 
+                                   className="text-xs text-green-600 hover:text-green-800 underline mt-1 block">
+                                  Open in Google Calendar
+                                </a>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-500 mt-2">
+                              Due: {item.due_date ? new Date(item.due_date).toLocaleString() : 'No due date'}
+                            </p>
+                          )}
+                        </div>
+                        {!item.isCalendarEvent && (
+                          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                            <button
+                              onClick={() => handleMarkDone(item.id, item.done)}
+                              className={`p-1 rounded-md transition-colors ${
+                                item.done 
+                                  ? 'text-gray-600 hover:text-gray-800 hover:bg-gray-50' 
+                                  : 'text-green-600 hover:text-green-800 hover:bg-green-50'
+                              }`}
+                              title={item.done ? 'Mark as undone' : 'Mark as done'}
+                            >
+                              {item.done ? (
+                                <Undo2 className="w-4 h-4" />
+                              ) : (
+                                <Check className="w-4 h-4" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleEditTask(item)}
+                              className="text-indigo-600 hover:text-indigo-800 p-1 rounded-md hover:bg-indigo-50"
+                              title="Edit task"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTask(item.id)}
+                              className="text-red-600 hover:text-red-800 p-1 rounded-md hover:bg-red-50"
+                              title="Delete task"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      {task.status && (
+                      {item.status && (
                         <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-2 ${
-                          task.status === 'completed' ? 'bg-green-100 text-green-800' :
-                          task.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                          item.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          item.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
                           'bg-gray-100 text-gray-800'
                         }`}>
-                          {task.status.replace('_', ' ')}
+                          {item.status.replace('_', ' ')}
                         </span>
                       )}
                     </div>
@@ -632,6 +826,52 @@ function DashboardContent() {
                   </svg>
                 )}
                 {loading ? (editingTask ? 'Updating...' : 'Adding...') : (editingTask ? 'Update' : 'Submit')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Delete Task</h3>
+                <p className="text-sm text-gray-500">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <p className="text-gray-700 mb-6">
+              Are you sure you want to delete this task? This will permanently remove it from your schedule.
+            </p>
+            
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={cancelDeleteTask}
+                disabled={loading}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteTask}
+                disabled={loading}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {loading && (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {loading ? 'Deleting...' : 'Delete Task'}
               </button>
             </div>
           </div>
