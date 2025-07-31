@@ -10,17 +10,7 @@ function DashboardContent() {
   const { user, signOut } = useAuth()
   const router = useRouter()
 
-  // Fallback schedule items if no tasks for today
-  const defaultScheduleItems = [
-    '8:00 AM – Review flashcards',
-    '9:00 AM – Algorithms Lecture', 
-    '10:00 AM – Study Session',
-    '12:00 PM – Lunch',
-    '1:00 PM – Group Project Work',
-    '3:00 PM – Free Slot',
-    '4:00 PM – Midterm Review',
-    '6:00 PM – Workout'
-  ]
+  // No default schedule items - only show real tasks and calendar events
 
   const [completedSchedule, setCompletedSchedule] = useState([])
   const [tasks, setTasks] = useState([])
@@ -31,6 +21,8 @@ function DashboardContent() {
   const [loadingCalendarEvents, setLoadingCalendarEvents] = useState(true)
   const [error, setError] = useState('')
   const [editingTask, setEditingTask] = useState(null)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [taskToDelete, setTaskToDelete] = useState(null)
   const [newTask, setNewTask] = useState({
     title: '',
     notes: '',
@@ -144,7 +136,7 @@ function DashboardContent() {
         
         setCalendarEvents(formattedEvents || [])
       } else {
-        console.error('Failed to load calendar events:', data.error)
+        console.error('Failed to load calendar events:', data.error || 'Unknown error')
         if (data.needsAuth) {
           console.log('Google calendar authentication required')
         }
@@ -203,26 +195,19 @@ function DashboardContent() {
     })
   }, [allItems])
 
-  // Use today's items or default schedule
+  // Only show real tasks and calendar events for today
   const scheduleItems = useMemo(() => {
-    return itemsForToday.length > 0 
-      ? itemsForToday.map(item => ({
-          id: item.id,
-          text: item.isCalendarEvent 
-            ? `${new Date(item.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title} ${item.location ? `(${item.location})` : ''}`
-            : `${new Date(item.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title}`,
-          isTask: !item.isCalendarEvent,
-          isCalendarEvent: item.isCalendarEvent
-        }))
-      : defaultScheduleItems.map((item, idx) => ({
-          id: `default-${idx}`,
-          text: item,
-          isTask: false,
-          isCalendarEvent: false
-        }))
-  }, [itemsForToday, defaultScheduleItems])
+    return itemsForToday.map(item => ({
+      id: item.id,
+      text: item.isCalendarEvent 
+        ? `${new Date(item.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title} ${item.location ? `(${item.location})` : ''}`
+        : `${new Date(item.due_date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} – ${item.title}`,
+      isTask: !item.isCalendarEvent,
+      isCalendarEvent: item.isCalendarEvent
+    }))
+  }, [itemsForToday])
 
-  const dailyProgress = Math.round((completedSchedule.length / scheduleItems.length) * 100)
+  const dailyProgress = scheduleItems.length > 0 ? Math.round((completedSchedule.length / scheduleItems.length) * 100) : 0
   const radius = 45
   const circumference = 2 * Math.PI * radius
   const offset = circumference * (1 - dailyProgress / 100)
@@ -313,32 +298,45 @@ function DashboardContent() {
     }
   }
 
-  const handleDeleteTask = async (taskId) => {
-    if (!confirm('Are you sure you want to delete this task?')) {
-      return
-    }
+  const handleDeleteTask = (taskId) => {
+    setTaskToDelete(taskId)
+    setShowDeleteModal(true)
+  }
+
+  const confirmDeleteTask = async () => {
+    if (!taskToDelete) return
 
     try {
+      setLoading(true)
       const response = await fetch('/api/delete-task', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: taskId,
+          id: taskToDelete,
           user_id: user?.id
         }),
       })
 
       if (response.ok) {
         await loadTasks() // Reload tasks from database
+        setShowDeleteModal(false)
+        setTaskToDelete(null)
       } else {
         const data = await response.json()
         setError(data.error?.message || 'Failed to delete task')
       }
     } catch (err) {
       setError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
     }
+  }
+
+  const cancelDeleteTask = () => {
+    setShowDeleteModal(false)
+    setTaskToDelete(null)
   }
 
   const handleEditTask = (task) => {
@@ -464,7 +462,11 @@ function DashboardContent() {
           <h2 className="text-2xl font-bold text-indigo-600 mb-4">{getCurrentDate()}</h2>
           <div className="space-y-3">
             {scheduleItems.length === 0 ? (
-              <p className="text-gray-500 text-center py-8">No tasks scheduled for today</p>
+              <div className="text-center py-12">
+                <div className="text-gray-400 text-6xl mb-4">📅</div>
+                <p className="text-gray-500 text-lg mb-2">No tasks or events scheduled for today</p>
+                <p className="text-gray-400 text-sm">Add some tasks or sync your calendar to get started!</p>
+              </div>
             ) : (
               scheduleItems.map((item, idx) => {
                 const isDone = completedSchedule.includes(item.text)
@@ -738,6 +740,52 @@ function DashboardContent() {
                   </svg>
                 )}
                 {loading ? (editingTask ? 'Updating...' : 'Adding...') : (editingTask ? 'Update' : 'Submit')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Delete Task</h3>
+                <p className="text-sm text-gray-500">This action cannot be undone</p>
+              </div>
+            </div>
+            
+            <p className="text-gray-700 mb-6">
+              Are you sure you want to delete this task? This will permanently remove it from your schedule.
+            </p>
+            
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={cancelDeleteTask}
+                disabled={loading}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteTask}
+                disabled={loading}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {loading && (
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {loading ? 'Deleting...' : 'Delete Task'}
               </button>
             </div>
           </div>
