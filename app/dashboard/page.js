@@ -188,6 +188,24 @@ function DashboardContent() {
     })
   }
 
+  const formatDateForInput = (dateString) => {
+    const date = new Date(dateString)
+    // Get the timezone offset in minutes and convert to milliseconds
+    const timezoneOffset = date.getTimezoneOffset() * 60000
+    // Adjust for timezone to get local time
+    const localDate = new Date(date.getTime() - timezoneOffset)
+    // Format for datetime-local input (YYYY-MM-DDTHH:MM)
+    return localDate.toISOString().slice(0, 16)
+  }
+
+  const formatDateForAPI = (datetimeLocalString) => {
+    // datetimeLocalString is like "2025-07-31T03:31" from datetime-local input
+    // We need to treat this as the user's local time and convert it properly
+    const localDate = new Date(datetimeLocalString)
+    // Return as ISO string which will be properly stored
+    return localDate.toISOString()
+  }
+
   const getCurrentDate = () => {
     const now = new Date()
     return now.toLocaleDateString('en-US', {
@@ -250,7 +268,7 @@ function DashboardContent() {
         body: JSON.stringify({
           title: newTask.title,
           description: newTask.notes,
-          due_date: newTask.due,
+          due_date: formatDateForAPI(newTask.due),
           type: 'task',
           status: 'pending',
           priority: newTask.priority,
@@ -295,7 +313,7 @@ function DashboardContent() {
           id: editingTask.id,
           title: newTask.title,
           description: newTask.notes,
-          due_date: newTask.due,
+          due_date: formatDateForAPI(newTask.due),
           user_id: user?.id
         }),
       })
@@ -364,7 +382,7 @@ function DashboardContent() {
     setNewTask({
       title: task.title,
       notes: task.description || '',
-      due: task.due_date ? new Date(task.due_date).toISOString().slice(0, 16) : ''
+      due: task.due_date ? formatDateForInput(task.due_date) : ''
     })
     setShowModal(true)
   }
@@ -449,7 +467,7 @@ function DashboardContent() {
       body: JSON.stringify({
         title,
         description: originalTask.notes,
-        due_date: originalTask.due,
+        due_date: formatDateForAPI(originalTask.due),
         type: 'task',
         status: 'pending',
         priority: originalTask.priority,
@@ -493,23 +511,51 @@ function DashboardContent() {
                 return (
                   <div
                     key={item.id}
-                    className={`p-4 rounded-xl border flex justify-between items-center transition-colors duration-300 ${
+                    className={`p-4 rounded-xl border transition-colors duration-300 group ${
                       isDone ? 'bg-green-100 border-green-200' : 'bg-indigo-50 border-indigo-100'
                     }`}
                   >
-                    <span className={isDone ? 'line-through text-gray-500' : ''}>{item.text}</span>
-                    {item.isTask && (
-                      <button
-                        onClick={() => handleMarkDone(item.id, item.done)}
-                        className={`text-white text-sm px-3 py-1 rounded-lg transition-colors ${
-                          isDone 
-                            ? 'bg-gray-500 hover:bg-gray-600' 
-                            : 'bg-green-700 hover:bg-green-800'
-                        }`}
-                      >
-                        {isDone ? '↶ Undo' : '✔ Done'}
-                      </button>
-                    )}
+                    <div className="flex justify-between items-center">
+                      <span className={isDone ? 'line-through text-gray-500' : ''}>{item.text}</span>
+                      {item.isTask && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleEditTask(allItems.find(task => task.id === item.id))}
+                            className="text-indigo-600 hover:text-indigo-800 p-2 rounded-md hover:bg-indigo-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Edit task"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTask(item.id)}
+                            className="text-red-600 hover:text-red-800 p-2 rounded-md hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Delete task"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleMarkDone(item.id, item.done)}
+                            className={`text-white text-sm px-3 py-1 rounded-lg transition-colors flex items-center gap-1 ${
+                              isDone 
+                                ? 'bg-gray-500 hover:bg-gray-600' 
+                                : 'bg-green-700 hover:bg-green-800'
+                            }`}
+                          >
+                            {isDone ? (
+                              <>
+                                <Undo2 className="w-4 h-4" />
+                                Undo
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-4 h-4" />
+                                Done
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )
               })
