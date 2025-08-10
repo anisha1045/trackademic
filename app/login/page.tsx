@@ -29,7 +29,7 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
     setSuccess(false)
-  
+    console.log("Submitted login form:", form)
     const result = await signIn(form.email, form.password)
   
     if (result.error) {

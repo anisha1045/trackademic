@@ -15,6 +15,7 @@ export default function SignUpPage() {
     college: '',
     password: '',
   })
+  
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
@@ -34,6 +35,7 @@ export default function SignUpPage() {
       phone: form.phone,
       college: form.college
     })
+    console.log('signup result:', { data, signUpError })
 
     if (signUpError) {
       setError(signUpError.message)

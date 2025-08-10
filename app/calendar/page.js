@@ -29,7 +29,7 @@ function CalendarContent() {
   const [monthlyTasks, setMonthlyTasks] = useState([])
   
   // Mock calendar events - fallback when Google Calendar is not synced
-  const mockEvents = [
+  const mockEvents = useMemo(() => [
     {
       id: 1,
       title: 'CS101 Lecture',
@@ -54,30 +54,37 @@ function CalendarContent() {
       type: 'study',
       color: 'bg-green-500'
     }
-  ]
+  ], []);
 
   useEffect(() => {
     if (user?.id) {
-      loadCalendarEvents()
-      checkGoogleSyncStatus()
-      loadMonthlyTasks()
+      loadCalendarEvents();
+      checkGoogleSyncStatus();
+      loadMonthlyTasks();
     }
-    // Initialize with mock events for fallback
-    setEvents(mockEvents)
-    fetchEventsForSelectedDate()
-  }, [user?.id])
+  
+    setEvents(mockEvents);
+    fetchEventsForSelectedDate();
+  }, [
+    user?.id,
+    loadCalendarEvents,
+    checkGoogleSyncStatus,
+    loadMonthlyTasks,
+    fetchEventsForSelectedDate,
+    mockEvents,
+  ]);
 
   useEffect(() => {
-    fetchEventsForSelectedDate()
-  }, [selectedDate])
+    fetchEventsForSelectedDate();
+  }, [fetchEventsForSelectedDate]);
 
   useEffect(() => {
     if (user?.id) {
       loadMonthlyTasks()
     }
-  }, [currentDate, user?.id])
+  }, [loadMonthlyTasks, currentDate, user?.id])
 
-  const loadMonthlyTasks = async () => {
+  const loadMonthlyTasks = useCallback(async () => {
     try {
       const response = await fetch('/api/get-tasks')
       if (!response.ok) {
@@ -103,9 +110,9 @@ function CalendarContent() {
       console.error('Error loading monthly tasks:', error)
       setMonthlyTasks([])
     }
-  }
+  }, []);
 
-  const checkGoogleSyncStatus = async () => {
+  const checkGoogleSyncStatus = useCallback(async () => {
     try {
       const res = await fetch(`/api/get-calendar-events?user_id=${user.id}`)
       const data = await res.json()
@@ -113,7 +120,7 @@ function CalendarContent() {
     } catch (err) {
       console.error('Error checking sync status:', err)
     }
-  }
+  }, [user?.id]);
 
   const handleSync = async () => {
     setLoading(true)
@@ -148,7 +155,7 @@ function CalendarContent() {
     }
   }
 
-  const loadCalendarEvents = async () => {
+  const loadCalendarEvents = useCallback(async () => {
     setLoadingEvents(true)
     try {
       const res = await fetch(`/api/get-calendar-events?user_id=${user.id}`)
@@ -169,7 +176,7 @@ function CalendarContent() {
     } finally {
       setLoadingEvents(false)
     }
-  }
+  }, [user?.id]);
 
   const handleLogout = async () => {
     const { error } = await signOut()
@@ -194,7 +201,7 @@ function CalendarContent() {
     return `${year}-${month}-${day}`
   }
 
-  const fetchEventsForSelectedDate = async () => {
+  const fetchEventsForSelectedDate = useCallback(async () => {
     try {
       const formattedDate = formatDateToAPI(selectedDate)
       const response = await fetch(`/api/get-tasks/${formattedDate}`)
@@ -223,7 +230,7 @@ function CalendarContent() {
       console.error('Error fetching events:', error)
       setSelectedDateEvents([]) // Explicitly set empty array on error
     }
-  }
+  }, [selectedDate]);
 
   const handleDayClick = (day) => {
     const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)

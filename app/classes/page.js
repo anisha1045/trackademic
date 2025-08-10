@@ -275,7 +275,7 @@ function ClassesContent() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-600 mb-2">No classes yet</h3>
-              <p className="text-gray-500">Click "Add Class" to create your first class</p>
+              <p className="text-gray-500">Click &quot;Add Class&quot; to create your first class</p>
             </div>
           )}
         </div>
@@ -433,7 +433,7 @@ function ClassesContent() {
             </div>
             
             <p className="text-gray-700 mb-6">
-              Are you sure you want to delete <span className="font-medium">"{classToDelete?.name}"</span>? 
+              Are you sure you want to delete <span className="font-medium">&quot;{classToDelete?.name}&quot;</span>? 
               This will also remove all associated assignments and cannot be undone.
             </p>
             

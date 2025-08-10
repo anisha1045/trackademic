@@ -10,10 +10,8 @@ export default function HomePage() {
   const { user, loading } = useAuth()
 
   useEffect(() => {
-    if (!loading) {
-      if (user) {
-        router.push('/dashboard')
-      }
+    if (!loading && user) {
+      router.push('/dashboard')
     }
   }, [user, loading, router])
 

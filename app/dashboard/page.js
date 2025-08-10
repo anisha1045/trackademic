@@ -33,12 +33,9 @@ function DashboardContent() {
   })
 
   // Load tasks from database
-  useEffect(() => {
-    if (user) {
-      loadTasks()
-      loadCalendarEvents()
-    }
-  }, [user])
+  console.log("ABout to load tasks from db");
+  console.log("Current user:", user)
+  console.log("Rendering component, user =", user)
 
   const fetchChatCompletion = async (task, parts) => {
     const response = await fetch('/api/split-task', {
@@ -57,8 +54,9 @@ function DashboardContent() {
     }
   }
 
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     try {
+      console.log("LOADING TASKS")
       setLoadingTasks(true)
       const response = await fetch('/api/get-tasks')
       const data = await response.json()
@@ -106,9 +104,9 @@ function DashboardContent() {
     } finally {
       setLoadingTasks(false)
     }
-  }
+  }, []);
 
-  const loadCalendarEvents = async () => {
+  const loadCalendarEvents = useCallback(async () => {
     try {
       setLoadingCalendarEvents(true)
       const response = await fetch(`/api/get-calendar-events?user_id=${user?.id}`)
@@ -147,7 +145,17 @@ function DashboardContent() {
     } finally {
       setLoadingCalendarEvents(false)
     }
-  }
+  }, [user?.id]);
+
+  useEffect(() => {
+    console.log("in use effect")
+    if (user) {
+      console.log("user exists")
+      loadTasks();
+      loadCalendarEvents();
+      console.log("done gettung stuffs from db");
+    }
+  }, [user, loadTasks, loadCalendarEvents]);
 
   const handleLogout = async () => {
     const { error } = await signOut()

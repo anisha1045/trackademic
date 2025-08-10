@@ -10,8 +10,9 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.6.1",
-    "@supabase/supabase-js": "^2.52.1",
+    "@supabase/supabase-js": "^2.54.0",
     "google-auth-library": "^10.2.0",
     "googleapis": "^154.1.0",
     "lucide-react": "^0.532.0",
