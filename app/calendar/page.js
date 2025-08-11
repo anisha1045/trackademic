@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
@@ -56,26 +56,118 @@ function CalendarContent() {
     }
   ]
 
+  const formatDateToAPI = useCallback((date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }, [])
+  
+  const fetchEventsForSelectedDate = useCallback(async () => {
+    try {
+      const formattedDate = formatDateToAPI(selectedDate)
+      const response = await fetch(`/api/get-tasks/${formattedDate}`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks')
+      }
+      
+      const data = await response.json()
+      console.log("DATA: ", data)
+      
+      // Transform the data to include proper display properties
+      const transformedEvents = Array.isArray(data.data) ? data.data.map(item => ({
+        ...item,
+        time: item.due_date ? new Date(item.due_date).toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit' 
+        }) : 'All day',
+        type: item.class_id ? 'assignment' : 'task', // Assignments have class_id, tasks might not
+        color: item.done ? 'bg-green-500' : (item.class_id ? 'bg-red-500' : 'bg-blue-500'), // Green for done, red for assignments, blue for tasks
+        date: item.due_date ? new Date(item.due_date).toLocaleDateString('en-CA') : null // Extract YYYY-MM-DD in local timezone
+      })) : []
+      
+      setSelectedDateEvents(transformedEvents)
+    } catch (error) {
+      console.error('Error fetching events:', error)
+      setSelectedDateEvents([]) // Explicitly set empty array on error
+    }
+  }, [selectedDate, setSelectedDateEvents, formatDateToAPI])
+
+  const loadCalendarEvents = useCallback(async () => {
+    setLoadingEvents(true)
+    try {
+      const res = await fetch(`/api/get-calendar-events?user_id=${user.id}`)
+      const data = await res.json()
+      
+      if (data.needsAuth) {
+        setGoogleEvents([])
+        return
+      }
+      
+      if (data.success) {
+        setGoogleEvents(data.events || [])
+      } else {
+        console.error('Failed to load calendar events:', data.message)
+      }
+    } catch (err) {
+      console.error('Error loading events:', err)
+    } finally {
+      setLoadingEvents(false)
+    }
+  }, [user?.id, setGoogleEvents, setLoadingEvents])
+
   useEffect(() => {
+
+    const checkGoogleSyncStatus = async () => {
+      try {
+        const res = await fetch(`/api/get-calendar-events?user_id=${user.id}`)
+        const data = await res.json()
+        setIsGoogleSynced(!data.needsAuth)
+      } catch (err) {
+        console.error('Error checking sync status:', err)
+      }
+    }
+
     if (user?.id) {
       loadCalendarEvents()
       checkGoogleSyncStatus()
       loadMonthlyTasks()
     }
     // Initialize with mock events for fallback
+    const mockEvents = [
+      {
+        id: 1,
+        title: 'CS101 Lecture',
+        time: '9:00 AM',
+        date: '2025-01-15',
+        type: 'class',
+        color: 'bg-blue-500'
+      },
+      {
+        id: 2,
+        title: 'Math Assignment Due',
+        time: '11:59 PM',
+        date: '2025-01-16',
+        type: 'assignment',
+        color: 'bg-red-500'
+      },
+      {
+        id: 3,
+        title: 'Study Group',
+        time: '2:00 PM',
+        date: '2025-01-17',
+        type: 'study',
+        color: 'bg-green-500'
+      }
+    ]
     setEvents(mockEvents)
     fetchEventsForSelectedDate()
-  }, [user?.id])
+  }, [user?.id, fetchEventsForSelectedDate, loadCalendarEvents])
 
   useEffect(() => {
     fetchEventsForSelectedDate()
-  }, [selectedDate])
-
-  useEffect(() => {
-    if (user?.id) {
-      loadMonthlyTasks()
-    }
-  }, [currentDate, user?.id])
+  }, [selectedDate, fetchEventsForSelectedDate])
 
   const loadMonthlyTasks = async () => {
     try {
@@ -104,6 +196,12 @@ function CalendarContent() {
       setMonthlyTasks([])
     }
   }
+
+  useEffect(() => {
+    if (user?.id) {
+      loadMonthlyTasks()
+    }
+  }, [currentDate, user?.id])
 
   const checkGoogleSyncStatus = async () => {
     try {
@@ -148,28 +246,6 @@ function CalendarContent() {
     }
   }
 
-  const loadCalendarEvents = async () => {
-    setLoadingEvents(true)
-    try {
-      const res = await fetch(`/api/get-calendar-events?user_id=${user.id}`)
-      const data = await res.json()
-      
-      if (data.needsAuth) {
-        setGoogleEvents([])
-        return
-      }
-      
-      if (data.success) {
-        setGoogleEvents(data.events || [])
-      } else {
-        console.error('Failed to load calendar events:', data.message)
-      }
-    } catch (err) {
-      console.error('Error loading events:', err)
-    } finally {
-      setLoadingEvents(false)
-    }
-  }
 
   const handleLogout = async () => {
     const { error } = await signOut()
@@ -185,44 +261,6 @@ function CalendarContent() {
       month: 'long',
       day: 'numeric'
     })
-  }
-
-  const formatDateToAPI = (date) => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-
-  const fetchEventsForSelectedDate = async () => {
-    try {
-      const formattedDate = formatDateToAPI(selectedDate)
-      const response = await fetch(`/api/get-tasks/${formattedDate}`)
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch tasks')
-      }
-      
-      const data = await response.json()
-      console.log("DATA: ", data)
-      
-      // Transform the data to include proper display properties
-      const transformedEvents = Array.isArray(data.data) ? data.data.map(item => ({
-        ...item,
-        time: item.due_date ? new Date(item.due_date).toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          minute: '2-digit' 
-        }) : 'All day',
-        type: item.class_id ? 'assignment' : 'task', // Assignments have class_id, tasks might not
-        color: item.done ? 'bg-green-500' : (item.class_id ? 'bg-red-500' : 'bg-blue-500'), // Green for done, red for assignments, blue for tasks
-        date: item.due_date ? new Date(item.due_date).toLocaleDateString('en-CA') : null // Extract YYYY-MM-DD in local timezone
-      })) : []
-      
-      setSelectedDateEvents(transformedEvents)
-    } catch (error) {
-      console.error('Error fetching events:', error)
-      setSelectedDateEvents([]) // Explicitly set empty array on error
-    }
   }
 
   const handleDayClick = (day) => {

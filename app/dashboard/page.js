@@ -33,12 +33,6 @@ function DashboardContent() {
   })
 
   // Load tasks from database
-  useEffect(() => {
-    if (user) {
-      loadTasks()
-      loadCalendarEvents()
-    }
-  }, [user])
 
   const fetchChatCompletion = async (task, parts) => {
     const response = await fetch('/api/split-task', {
@@ -108,46 +102,51 @@ function DashboardContent() {
     }
   }
 
-  const loadCalendarEvents = async () => {
-    try {
-      setLoadingCalendarEvents(true)
-      const response = await fetch(`/api/get-calendar-events?user_id=${user?.id}`)
-      const data = await response.json()
-      
-      if (response.ok) {
-        console.log("CALENDAR EVENT DATA: ", data.events)
-        
-        // Transform calendar events to match our task format
-        const formattedEvents = data.events.map(event => ({
-          id: `calendar-${event.id}`,
-          title: event.title,
-          description: event.description,
-          due_date: event.start, // Use start time as "due date" for sorting
-          start_time: event.start,
-          end_time: event.end,
-          location: event.location,
-          isAllDay: event.isAllDay,
-          isCalendarEvent: true,
-          htmlLink: event.htmlLink,
-          priority: 'medium',
-          estimated_time: event.isAllDay ? 480 : 60, // 8 hours for all-day, 1 hour for timed events
-          status: 'pending' // Calendar events are always "pending" since they're upcoming
-        }))
-        
-        setCalendarEvents(formattedEvents || [])
-      } else {
-        if (data.needsAuth) {
-          console.log('Google calendar authentication required')
+  useEffect(() => {
+    if (user) {
+      loadTasks()
+      const loadCalendarEvents = async () => {
+        try {
+          setLoadingCalendarEvents(true)
+          const response = await fetch(`/api/get-calendar-events?user_id=${user?.id}`)
+          const data = await response.json()
+          
+          if (response.ok) {
+            console.log("CALENDAR EVENT DATA: ", data.events)
+            
+            // Transform calendar events to match our task format
+            const formattedEvents = data.events.map(event => ({
+              id: `calendar-${event.id}`,
+              title: event.title,
+              description: event.description,
+              due_date: event.start, // Use start time as "due date" for sorting
+              start_time: event.start,
+              end_time: event.end,
+              location: event.location,
+              isAllDay: event.isAllDay,
+              isCalendarEvent: true,
+              htmlLink: event.htmlLink,
+              priority: 'medium',
+              estimated_time: event.isAllDay ? 480 : 60, // 8 hours for all-day, 1 hour for timed events
+              status: 'pending' // Calendar events are always "pending" since they're upcoming
+            }))
+            
+            setCalendarEvents(formattedEvents || [])
+          } else {
+            if (data.needsAuth) {
+              console.log('Google calendar authentication required')
+            }
+            setCalendarEvents([]) // Set empty array on error
+          }
+        } catch (err) {
+          console.error('Error loading calendar events:', err)
+          setCalendarEvents([]) // Set empty array on error
+        } finally {
+          setLoadingCalendarEvents(false)
         }
-        setCalendarEvents([]) // Set empty array on error
       }
-    } catch (err) {
-      console.error('Error loading calendar events:', err)
-      setCalendarEvents([]) // Set empty array on error
-    } finally {
-      setLoadingCalendarEvents(false)
     }
-  }
+  }, [user])
 
   const handleLogout = async () => {
     const { error } = await signOut()

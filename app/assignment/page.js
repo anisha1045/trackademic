@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { useAuth } from '@/lib/auth'
@@ -65,37 +65,6 @@ function AssignmentContent() {
     }
   }
 
-  // Load existing assignments and classes on component mount
-  useEffect(() => {
-    loadClasses()
-    loadAssignments()
-
-    // Prevent default drag behaviors on the whole document
-    const handleGlobalDrag = (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-
-    const handleGlobalDrop = (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-
-    // Add global event listeners
-    document.addEventListener('dragenter', handleGlobalDrag)
-    document.addEventListener('dragover', handleGlobalDrag) 
-    document.addEventListener('dragleave', handleGlobalDrag)
-    document.addEventListener('drop', handleGlobalDrop)
-
-    // Cleanup
-    return () => {
-      document.removeEventListener('dragenter', handleGlobalDrag)
-      document.removeEventListener('dragover', handleGlobalDrag)
-      document.removeEventListener('dragleave', handleGlobalDrag)
-      document.removeEventListener('drop', handleGlobalDrop)
-    }
-  }, [])
-
   const loadClasses = async () => {
     try {
       const response = await fetch('/api/get-classes')
@@ -120,7 +89,7 @@ function AssignmentContent() {
     }
   }
 
-  const loadAssignments = async () => {
+  const loadAssignments = useCallback(async () => {
     try {
       const response = await fetch(`/api/get-tasks${user ? `?user_id=${user.id}` : ''}`)
       const result = await response.json()
@@ -147,7 +116,38 @@ function AssignmentContent() {
       console.error('Failed to load assignments:', err)
       setAssignments([])
     }
-  }
+  }, [user, setAssignments])
+
+    // Load existing assignments and classes on component mount
+    useEffect(() => {
+      loadClasses()
+      loadAssignments()
+  
+      // Prevent default drag behaviors on the whole document
+      const handleGlobalDrag = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+  
+      const handleGlobalDrop = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+  
+      // Add global event listeners
+      document.addEventListener('dragenter', handleGlobalDrag)
+      document.addEventListener('dragover', handleGlobalDrag) 
+      document.addEventListener('dragleave', handleGlobalDrag)
+      document.addEventListener('drop', handleGlobalDrop)
+  
+      // Cleanup
+      return () => {
+        document.removeEventListener('dragenter', handleGlobalDrag)
+        document.removeEventListener('dragover', handleGlobalDrag)
+        document.removeEventListener('dragleave', handleGlobalDrag)
+        document.removeEventListener('drop', handleGlobalDrop)
+      }
+    }, [loadAssignments])
 
   // Function to sync assignments with Google Calendar
   const syncWithGoogleCalendar = async () => {
@@ -615,7 +615,7 @@ function AssignmentContent() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-600 mb-2">No assignments yet</h3>
-              <p className="text-gray-500">Click "Add Assignment" to create your first assignment</p>
+              <p className="text-gray-500">Click &quot;Add Assignment&quot; to create your first assignment</p>
             </div>
           )}
         </div>
